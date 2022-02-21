@@ -7,12 +7,10 @@ import mapper.enums.NullHandling;
 import mapper.exceptions.ExportMapperException;
 import mapper.interfaces.Mapper;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.io.*;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -24,12 +22,25 @@ public class Serializer implements Mapper {
 
     @Override
     public <T> T read(Class<T> clazz, InputStream inputStream) throws IOException {
-        throw new UnsupportedOperationException();
+        BufferedInputStream bis = new BufferedInputStream(inputStream);
+        ByteArrayOutputStream buf = new ByteArrayOutputStream();
+        for (int result = bis.read(); result != -1; result = bis.read()) {
+            buf.write((byte) result);
+        }
+
+        System.out.println(buf.toString(StandardCharsets.UTF_8));
+        return null;
     }
 
     @Override
     public <T> T read(Class<T> clazz, File file) throws IOException {
-        throw new UnsupportedOperationException();
+        String strObject;
+        try (BufferedReader reader = new BufferedReader(new FileReader(file, StandardCharsets.UTF_8))) {
+            strObject = reader.readLine();
+        }
+
+        System.out.println(strObject);
+        return null;
     }
 
     @Override
@@ -44,12 +55,16 @@ public class Serializer implements Mapper {
 
     @Override
     public void write(Object object, OutputStream outputStream) throws IOException {
-        throw new UnsupportedOperationException();
+        try (Writer writer = new OutputStreamWriter(outputStream, StandardCharsets.UTF_8)) {
+            writer.write(writeToString(object));
+        }
     }
 
     @Override
     public void write(Object object, File file) throws IOException {
-        throw new UnsupportedOperationException();
+        try (FileWriter writer = new FileWriter(file, StandardCharsets.UTF_8)) {
+            writer.write(writeToString(object));
+        }
     }
 
     private void checkExportation(Object object) {

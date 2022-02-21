@@ -10,6 +10,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.io.*;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -28,7 +29,24 @@ class SerializerTest {
     }
 
     @Test
-    void read() {
+    void readWriteOutputStream() {
+        GoodClass obj = new GoodClass();
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        assertDoesNotThrow(()->serializer.write(obj, out));
+
+        ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());
+        assertDoesNotThrow(()->serializer.read(GoodClass.class, in));
+
+    }
+
+    @Test
+    void readWriteFile() {
+        GoodClass obj = new GoodClass();
+        assertDoesNotThrow(()->serializer.write(obj, new File("src/test/files/test1")));
+        assertDoesNotThrow(()->serializer.read(GoodClass.class, new File("src/test/files/test1")));
+
+
     }
 
     @Test
