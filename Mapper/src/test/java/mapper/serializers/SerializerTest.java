@@ -12,7 +12,9 @@ import org.junit.jupiter.api.Test;
 
 import java.io.*;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -33,21 +35,33 @@ class SerializerTest {
         GoodClass obj = new GoodClass();
 
         ByteArrayOutputStream out = new ByteArrayOutputStream();
-        assertDoesNotThrow(()->serializer.write(obj, out));
+        assertDoesNotThrow(() -> serializer.write(obj, out));
 
         ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());
-        assertDoesNotThrow(()->serializer.read(GoodClass.class, in));
+        assertDoesNotThrow(() -> serializer.read(GoodClass.class, in));
 
     }
 
     @Test
     void readWriteFile() {
         GoodClass obj = new GoodClass();
-        assertDoesNotThrow(()->serializer.write(obj, new File("src/test/files/test1")));
-        assertDoesNotThrow(()->serializer.read(GoodClass.class, new File("src/test/files/test1")));
-
-
+        assertDoesNotThrow(() -> serializer.write(obj, new File("src/test/files/test1")));
+        assertDoesNotThrow(() -> serializer.read(GoodClass.class, new File("src/test/files/test1")));
     }
+
+    @Test
+    void readString() {
+        ReviewComment comment = new ReviewComment();
+        comment.setComment("KlakClik");
+        String str = assertDoesNotThrow(() -> serializer.writeToString(comment));
+        System.out.println(str);
+//        GoodClass obj = new GoodClass();
+//        str = assertDoesNotThrow(()->serializer.writeToString(obj));
+
+        ReviewComment com = serializer.readFromString(ReviewComment.class, str);
+        System.out.println(serializer.writeToString(com));
+    }
+
 
     @Test
     void testRead() {
@@ -86,6 +100,8 @@ class SerializerTest {
                 serializer.writeToString(new ExcludeNullClass())), "{}");
         assertEquals(assertDoesNotThrow(() ->
                 serializer.writeToString(new IncludeNullClass())), "{\"integer\":\"null\"}");
+
+
     }
 
     @Test
@@ -133,9 +149,12 @@ class GoodClass {
     public GoodClass() {
     }
 
+
     String str = "stroka";
     int intField = 5;
     Integer k = 123;
+
+    Set<Integer> ints = new HashSet<>(List.of(1, 3, 2));
 
     @PropertyName("List")
     List<List<Integer>> lllist = new ArrayList<>(
@@ -163,6 +182,10 @@ class ReviewComment {
     @Ignored
     private String author;
     private boolean resolved;
+    Boolean annBul = true;
+
+    char ch = 'q';
+    Character wCharr = 'W';
 
     public String getComment() {
         return comment;

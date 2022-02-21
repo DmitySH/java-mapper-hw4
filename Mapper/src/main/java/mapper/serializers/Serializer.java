@@ -6,18 +6,53 @@ import mapper.annotations.PropertyName;
 import mapper.enums.NullHandling;
 import mapper.exceptions.ExportMapperException;
 import mapper.interfaces.Mapper;
+import mapper.utils.TypeConverter;
 
 import java.io.*;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.stream.Collectors;
 
 public class Serializer implements Mapper {
+    private static final TypeConverter converter = new TypeConverter();
+
     @Override
     public <T> T readFromString(Class<T> clazz, String input) {
-        throw new UnsupportedOperationException();
+
+        checkClassExportation(clazz);
+        Map<String, Field> fields = new HashMap<>();
+        for (Field field : clazz.getDeclaredFields()) {
+            if (!field.isSynthetic() && !Modifier.isStatic(field.getModifiers())
+                    && !field.isAnnotationPresent(Ignored.class)) {
+                fields.put(field.getName(), field);
+            }
+        }
+
+
+        Object obj = createObject(clazz);
+
+
+        Map<String, String> elements = parseObject(input);
+        try {
+            for (String elementName :
+                    elements.keySet()) {
+                Field field = fields.get(elementName);
+
+                if (field.trySetAccessible()) {
+                    Class<?> fieldType = field.getType();
+                    if (converter.isPrimitiveOrWrapper(fieldType)) {
+                        field.set(obj, converter.convert(elements.get(elementName), fieldType));
+                    }
+                }
+            }
+        } catch (IllegalAccessException e) {
+            throw new ExportMapperException("Can't get access to field\n\r" + e.getMessage());
+        }
+
+        return clazz.cast(obj);
     }
 
     @Override
@@ -46,7 +81,7 @@ public class Serializer implements Mapper {
     @Override
     public String writeToString(Object object) {
         try {
-            checkExportation(object);
+            checkObjectExportation(object);
             return serializeToJson(object);
         } catch (Exception e) {
             throw new ExportMapperException(e.getMessage());
@@ -67,28 +102,41 @@ public class Serializer implements Mapper {
         }
     }
 
-    private void checkExportation(Object object) {
+    private Object createObject(Class<?> clazz) {
+        try {
+            Class<?> emptyClass = Class.forName(clazz.getName());
+            return clazz.getDeclaredConstructor().newInstance();
+        } catch (ClassNotFoundException | InvocationTargetException |
+                InstantiationException | IllegalAccessException |
+                NoSuchMethodException e) {
+            throw new ExportMapperException(e.getMessage());
+        }
+    }
+
+    private void checkObjectExportation(Object object) {
         if (Objects.isNull(object)) {
             throw new ExportMapperException("Can't serialize a null object");
         }
 
-        Class<?> objectClass = object.getClass();
+        checkClassExportation(object.getClass());
+    }
 
-        if (!objectClass.isAnnotationPresent(Exported.class)) {
-            throw new ExportMapperException("The class " + objectClass.getSimpleName() +
+    private void checkClassExportation(Class<?> clazz) {
+        if (!clazz.isAnnotationPresent(Exported.class)) {
+            throw new ExportMapperException("The class " + clazz.getSimpleName() +
                     " is not annotated with Exported");
         }
 
-        try {
-            objectClass.getConstructor();
-        } catch (NoSuchMethodException ex) {
-            throw new ExportMapperException("The class " + objectClass.getSimpleName() +
-                    " does not have parameterless public constructor");
+        if (clazz.getSuperclass() != Object.class) {
+            throw new ExportMapperException("The class " + clazz.getSimpleName() +
+                    " has not only Object superclass");
         }
 
-        if (objectClass.getSuperclass() != Object.class) {
-            throw new ExportMapperException("The class " + objectClass.getSimpleName() +
-                    " has not only Object superclass");
+        try {
+            clazz.getConstructor();
+        } catch (NoSuchMethodException ex) {
+            throw new ExportMapperException("The class " + clazz.getSimpleName() +
+                    " does not have parameterless public constructor");
         }
     }
 
@@ -107,7 +155,7 @@ public class Serializer implements Mapper {
         }
 
         for (Field field : clazz.getDeclaredFields()) {
-            if (checkWriteField(field, excludeNulls, object)) {
+            if (checkFieldIsSerializable(field, excludeNulls, object)) {
                 elements.put(getPropertyName(field, fieldNames), String.valueOf(field.get(object)));
             }
         }
@@ -120,8 +168,8 @@ public class Serializer implements Mapper {
         return "{" + jsonString + "}";
     }
 
-    private boolean checkWriteField(Field field, boolean excludeNulls,
-                                    Object object) throws IllegalAccessException {
+    private boolean checkFieldIsSerializable(Field field, boolean excludeNulls,
+                                             Object object) throws IllegalAccessException {
 
         if (!field.isSynthetic() && !Modifier.isStatic(field.getModifiers())) {
             if (field.trySetAccessible() && !field.isAnnotationPresent(Ignored.class)) {
@@ -144,5 +192,27 @@ public class Serializer implements Mapper {
         }
 
         return value.isEmpty() ? field.getName() : value;
+    }
+
+    private Map<String, String> parseObject(String str) {
+        Map<String, String> elements = new HashMap<>();
+        StringBuilder sb = new StringBuilder(str);
+
+        int i = 0;
+        while (i < sb.length()) {
+            if (sb.charAt(i) == '\"') {
+                int keyEnd = sb.indexOf("\"", i + 1);
+                String key = sb.substring(i + 1, keyEnd);
+
+                int valueEnd = sb.indexOf("\"", keyEnd + 3);
+                String value = sb.substring(keyEnd + 3, valueEnd);
+                elements.put(key, value);
+                i = valueEnd + 1;
+            } else {
+                i++;
+            }
+        }
+
+        return elements;
     }
 }
