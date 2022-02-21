@@ -1,6 +1,9 @@
 package mapper.serializers;
 
 import mapper.annotations.Exported;
+import mapper.annotations.Ignored;
+import mapper.annotations.PropertyName;
+import mapper.enums.NullHandling;
 import mapper.exceptions.ExportMapperException;
 import mapper.interfaces.Mapper;
 
@@ -8,10 +11,10 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.lang.annotation.Annotation;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Objects;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
+import java.util.*;
+import java.util.stream.Collectors;
 
 public class Serializer implements Mapper {
     @Override
@@ -31,12 +34,12 @@ public class Serializer implements Mapper {
 
     @Override
     public String writeToString(Object object) {
-        checkExportation(object);
-
-        Class<?> objectClass = object.getClass();
-
-
-        return null;
+        try {
+            checkExportation(object);
+            return serializeToJson(object);
+        } catch (Exception e) {
+            throw new ExportMapperException(e.getMessage());
+        }
     }
 
     @Override
@@ -72,5 +75,59 @@ public class Serializer implements Mapper {
             throw new ExportMapperException("The class " + objectClass.getSimpleName() +
                     " has not only Object superclass");
         }
+    }
+
+    private String serializeToJson(Object object) throws IllegalAccessException {
+        Class<?> clazz = object.getClass();
+        Map<String, String> elements = new HashMap<>();
+        Set<String> fieldNames = new HashSet<>();
+
+        boolean excludeNulls =
+                clazz.getAnnotation(Exported.class).nullHandling().equals(NullHandling.EXCLUDE);
+
+        for (Field field : clazz.getDeclaredFields()) {
+            if (!field.isSynthetic() && !Modifier.isStatic(field.getModifiers())) {
+                fieldNames.add(field.getName());
+            }
+        }
+
+        for (Field field : clazz.getDeclaredFields()) {
+            if (checkWriteField(field, excludeNulls, object)) {
+                elements.put(getPropertyName(field, fieldNames), String.valueOf(field.get(object)));
+            }
+        }
+
+        String jsonString = elements.entrySet()
+                .stream()
+                .map(entry -> "\"" + entry.getKey() + "\":\"" + entry.getValue() + "\"")
+                .collect(Collectors.joining(","));
+
+        return "{" + jsonString + "}";
+    }
+
+    private boolean checkWriteField(Field field, boolean excludeNulls,
+                                    Object object) throws IllegalAccessException {
+
+        if (!field.isSynthetic() && !Modifier.isStatic(field.getModifiers())) {
+            if (field.trySetAccessible() && !field.isAnnotationPresent(Ignored.class)) {
+                return !excludeNulls || field.get(object) != null;
+            }
+        }
+
+        return false;
+    }
+
+    private String getPropertyName(Field field, Set<String> fieldNames) {
+        String value = "";
+        if (field.isAnnotationPresent(PropertyName.class)) {
+            value = field.getAnnotation(PropertyName.class).value();
+        }
+
+        if (fieldNames.contains(value)) {
+            throw new ExportMapperException("The class has property name same as " +
+                    "field's name: " + value);
+        }
+
+        return value.isEmpty() ? field.getName() : value;
     }
 }
