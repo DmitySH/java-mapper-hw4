@@ -1,5 +1,6 @@
 package mapper.serializers;
 
+import mapper.annotations.DateFormat;
 import mapper.annotations.Exported;
 import mapper.annotations.Ignored;
 import mapper.annotations.PropertyName;
@@ -13,6 +14,8 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.TemporalAccessor;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -21,13 +24,16 @@ public class Serializer implements Mapper {
 
     @Override
     public <T> T readFromString(Class<T> clazz, String input) {
-
         checkClassExportation(clazz);
         Map<String, Field> fields = new HashMap<>();
         for (Field field : clazz.getDeclaredFields()) {
             if (!field.isSynthetic() && !Modifier.isStatic(field.getModifiers())
                     && !field.isAnnotationPresent(Ignored.class)) {
-                fields.put(field.getName(), field);
+                if (field.isAnnotationPresent(PropertyName.class)) {
+                    fields.put(field.getAnnotation(PropertyName.class).value(), field);
+                } else {
+                    fields.put(field.getName(), field);
+                }
             }
         }
 
@@ -88,6 +94,8 @@ public class Serializer implements Mapper {
         }
     }
 
+
+
     @Override
     public void write(Object object, OutputStream outputStream) throws IOException {
         try (Writer writer = new OutputStreamWriter(outputStream, StandardCharsets.UTF_8)) {
@@ -104,9 +112,8 @@ public class Serializer implements Mapper {
 
     private Object createObject(Class<?> clazz) {
         try {
-            Class<?> emptyClass = Class.forName(clazz.getName());
             return clazz.getDeclaredConstructor().newInstance();
-        } catch (ClassNotFoundException | InvocationTargetException |
+        } catch (InvocationTargetException |
                 InstantiationException | IllegalAccessException |
                 NoSuchMethodException e) {
             throw new ExportMapperException(e.getMessage());
@@ -156,21 +163,62 @@ public class Serializer implements Mapper {
 
         for (Field field : clazz.getDeclaredFields()) {
             if (checkFieldIsSerializable(field, excludeNulls, object)) {
-                elements.put(getPropertyName(field, fieldNames), String.valueOf(field.get(object)));
+                String dtFormat = field.isAnnotationPresent(DateFormat.class) ?
+                        field.getAnnotation(DateFormat.class).value() : null;
+                elements.put(getPropertyName(field, fieldNames), getFieldJson(field.get(object), dtFormat));
             }
         }
 
         String jsonString = elements.entrySet()
                 .stream()
-                .map(entry -> "\"" + entry.getKey() + "\":\"" + entry.getValue() + "\"")
+                .map(entry -> "\"" + entry.getKey() + "\":" + entry.getValue())
                 .collect(Collectors.joining(","));
 
         return "{" + jsonString + "}";
     }
 
+
+    private String arrayToJson(Collection<?> collection) {
+        String jsonString = collection.stream().map(elem -> getFieldJson(elem, null))
+                .collect(Collectors.joining(","));
+        return "[" + jsonString + "]";
+    }
+
+    private String primitiveOrEnumToJson(Object primitive) {
+        return "\"" + primitive + "\"";
+    }
+
+    private String dateTimeToJson(Object obj, String dtFormat) {
+        if (dtFormat != null) {
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern(dtFormat);
+            return "\"" + formatter.format((TemporalAccessor) obj) + "\"";
+        } else {
+            return "\"" + obj + "\"";
+        }
+    }
+
+    private String getFieldJson(Object obj, String dtFormat) {
+        Class<?> clazz = obj.getClass();
+        if (!isSerializableType(clazz)) {
+            throw new ExportMapperException("Type " + clazz.getSimpleName() +
+                    "can't be serialized with mapper");
+        }
+
+        if (clazz.isAnnotationPresent(Exported.class)) {
+            return writeToString(obj);
+        } else if (converter.isListOrSet(clazz)) {
+            return arrayToJson((Collection<?>) obj);
+        } else if (converter.isPrimitiveOrWrapper(clazz) || clazz.isEnum()) {
+            return primitiveOrEnumToJson(obj);
+        } else if (converter.isDateTime(clazz)) {
+            return dateTimeToJson(obj, dtFormat);
+        } else {
+            return String.valueOf(obj);
+        }
+    }
+
     private boolean checkFieldIsSerializable(Field field, boolean excludeNulls,
                                              Object object) throws IllegalAccessException {
-
         if (!field.isSynthetic() && !Modifier.isStatic(field.getModifiers())) {
             if (field.trySetAccessible() && !field.isAnnotationPresent(Ignored.class)) {
                 return !excludeNulls || field.get(object) != null;
@@ -212,7 +260,13 @@ public class Serializer implements Mapper {
                 i++;
             }
         }
-
+        System.out.println(elements);
         return elements;
+    }
+
+    public boolean isSerializableType(Class<?> clazz) {
+        return converter.isPrimitiveOrWrapper(clazz) || converter.isListOrSet(clazz) ||
+                converter.isDateTime(clazz) || clazz.isEnum() ||
+                clazz.isAnnotationPresent(Exported.class);
     }
 }

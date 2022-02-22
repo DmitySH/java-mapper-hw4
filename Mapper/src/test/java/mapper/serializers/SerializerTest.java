@@ -1,5 +1,6 @@
 package mapper.serializers;
 
+import mapper.annotations.DateFormat;
 import mapper.annotations.Exported;
 import mapper.annotations.Ignored;
 import mapper.annotations.PropertyName;
@@ -11,6 +12,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.*;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -164,6 +168,17 @@ class GoodClass {
 }
 
 @Exported
+class SmallGoodClass {
+
+    public SmallGoodClass() {
+    }
+
+
+    String str = "st";
+    int intField = 123;
+}
+
+@Exported
 class SameNameClass {
     public SameNameClass() {
     }
@@ -178,11 +193,32 @@ class ReviewComment {
     public ReviewComment() {
     }
 
+    private final NullHandling enu = NullHandling.EXCLUDE;
+
     private String comment;
     @Ignored
     private String author;
     private boolean resolved;
     Boolean annBul = true;
+
+    LocalDate lDate = LocalDate.now();
+    @DateFormat("hh:mm:ss a")
+    LocalTime lTime = LocalTime.now();
+    LocalDateTime ldT = LocalDateTime.now();
+
+    @PropertyName("List")
+    List<List<Integer>> lllist = new ArrayList<>(
+            List.of(new ArrayList<>(List.of(1, 2, 3)),
+                    new ArrayList<>(List.of(5, 2, 2))));
+
+    List<List<SmallGoodClass>> coms = new ArrayList<>(
+            List.of(
+                    new ArrayList<>(List.of(
+                            new SmallGoodClass(), new SmallGoodClass())),
+            new ArrayList<>(List.of(new SmallGoodClass()))
+            ));
+    @PropertyName("MegByte")
+    Byte b = 43;
 
     char ch = 'q';
     Character wCharr = 'W';

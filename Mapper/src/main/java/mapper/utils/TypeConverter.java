@@ -2,6 +2,12 @@ package mapper.utils;
 
 import mapper.exceptions.ExportMapperException;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.util.List;
+import java.util.Set;
+
 public class TypeConverter {
     public Object convert(String value, Class<?> clazz) {
         if (byte.class.equals(clazz) || Byte.class.equals(clazz)) {
@@ -32,5 +38,21 @@ public class TypeConverter {
                 clazz == Double.class || clazz == Float.class || clazz == Long.class ||
                 clazz == Integer.class || clazz == Short.class || clazz == Character.class ||
                 clazz == Byte.class || clazz == Boolean.class || clazz == String.class;
+    }
+
+    public boolean isListOrSet(Class<?> clazz) {
+        Class<?>[] interfaces = clazz.getInterfaces();
+        for (Class<?> i : interfaces) {
+            if (i == Set.class || i == List.class) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public boolean isDateTime(Class<?> clazz) {
+        return clazz == LocalDate.class || clazz == LocalTime.class ||
+                clazz == LocalDateTime.class;
     }
 }
