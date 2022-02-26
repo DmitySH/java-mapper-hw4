@@ -30,15 +30,7 @@ public class Serializer implements Mapper {
     }
 
     class JsonReader {
-        private Object createObject(Class<?> clazz) {
-            try {
-                return clazz.getDeclaredConstructor().newInstance();
-            } catch (InvocationTargetException |
-                    InstantiationException | IllegalAccessException |
-                    NoSuchMethodException e) {
-                throw new ExportMapperException(e.getMessage());
-            }
-        }
+
 
         private Collection<?> parseCollection(String value, Field field) {
             StringBuilder sb = new StringBuilder(value);
@@ -113,7 +105,7 @@ public class Serializer implements Mapper {
             }
         }
 
-        Object obj = reader.createObject(clazz);
+        Object obj = createObject(clazz);
         Map<String, String> elements = reader.parseObject(input);
 
         try {
@@ -233,7 +225,9 @@ public class Serializer implements Mapper {
         }
 
 
-        // TODO
+        // TODO: objects
+
+
         private String serializeObject(Object obj) throws IllegalAccessException {
             Class<?> clazz = obj.getClass();
             StringBuilder sb = new StringBuilder();
@@ -250,12 +244,7 @@ public class Serializer implements Mapper {
                             field.getAnnotation(DateFormat.class).value() : null;
 
                     if (converter.isPrimitiveOrWrapper(field.getType())) {
-                        String type;
-                        if (field.getType().toString().contains("class")) {
-                            type = field.getType().toString().substring(6);
-                        } else {
-                            type = field.getType().toString();
-                        }
+                        String type = field.getType().getName();
 
                         // Key + type.
                         sb.append('\"');
@@ -267,24 +256,25 @@ public class Serializer implements Mapper {
                         sb.append(":\"");
                         sb.append(field.get(obj));
                     } else if (converter.isListOrSet(field.getType())) {
-                        String type;
-                        type = field.getGenericType().toString();
+//                        Object instance = createObject(field.getClass());
+//                        System.out.println(instance.getClass());
+                        String realType = field.get(obj).getClass().getName();
+                        String abstractType = field.getGenericType().getTypeName();
+//                        System.out.println(realType);
+//                        System.out.println(field.get(obj).getClass());
+
 
                         // Key + type.
                         sb.append('\"');
                         sb.append(getPropertyName(field, fieldNames))
-                                .append('#').append(type);
+                                .append('#').append(realType)
+                                .append('#').append(abstractType);
                         sb.append("\":");
 
                         // Value.
-                        sb.append("ARR");
+                        sb.append(serializeArray((Collection<?>) field.get(obj)));
                     } else {
-                        String type;
-                        if (field.getType().toString().contains("class")) {
-                            type = field.getType().toString().substring(6);
-                        } else {
-                            type = field.getType().toString();
-                        }
+                        String type = field.getType().getName();
 
                         // Key + type.
                         sb.append('\"');
@@ -307,6 +297,76 @@ public class Serializer implements Mapper {
 
             return sb.toString();
         }
+
+        // TODO: arrays
+
+
+        private String serializeArray(Collection<?> array) {
+            StringBuilder sb = new StringBuilder();
+
+            sb.append('[');
+
+            if (array.isEmpty()) {
+                sb.append(']');
+                return sb.toString();
+            }
+
+
+
+            for (Object obj : array) {
+                Class<?> clazz = obj.getClass();
+                if (converter.isPrimitiveOrWrapper(clazz)) {
+                    String type = clazz.getName();
+
+                    // Key + type.
+                    sb.append('\"');
+                    sb.append(type);
+                    sb.append('\"');
+
+                    // Value.
+                    sb.append(":\"");
+                    sb.append(obj);
+                    sb.append("\"");
+                } else if (converter.isListOrSet(clazz)) {
+                    String type = clazz.getName();
+
+                    // Key + type.
+                    sb.append('\"');
+                    sb.append(type);
+                    sb.append("\":");
+
+                    // Value.
+                    sb.append(serializeArray((Collection<?>) obj));
+                } else {
+//                    String type;
+//                    if (field.getType().toString().contains("class")) {
+//                        type = field.getType().toString().substring(6);
+//                    } else {
+//                        type = field.getType().toString();
+//                    }
+//
+//                    // Key + type.
+//                    sb.append('\"');
+//                    sb.append(getPropertyName(field, fieldNames))
+//                            .append('#').append(type);
+//                    sb.append("\":");
+//
+//                    // Value.
+//                    sb.append("obj");
+                }
+                sb.append(',');
+            }
+
+
+            int index;
+            if ((index = sb.lastIndexOf(",")) != -1) {
+                sb.deleteCharAt(index);
+            }
+            sb.append(']');
+
+            return sb.toString();
+        }
+
 
         private String serializeToJson(Object obj) {
             try {
@@ -415,5 +475,15 @@ public class Serializer implements Mapper {
         return converter.isPrimitiveOrWrapper(clazz) || converter.isListOrSet(clazz) ||
                 converter.isDateTime(clazz) || clazz.isEnum() ||
                 clazz.isAnnotationPresent(Exported.class);
+    }
+
+    private Object createObject(Class<?> clazz) {
+        try {
+            return clazz.getDeclaredConstructor().newInstance();
+        } catch (InvocationTargetException |
+                InstantiationException | IllegalAccessException |
+                NoSuchMethodException e) {
+            throw new ExportMapperException(e.getMessage());
+        }
     }
 }

@@ -52,6 +52,10 @@ public class TypeConverter {
             }
         }
 
+        if (Set.class.isAssignableFrom(clazz)){
+            return true;
+        }
+
         return clazz == Set.class || clazz == List.class;
     }
 

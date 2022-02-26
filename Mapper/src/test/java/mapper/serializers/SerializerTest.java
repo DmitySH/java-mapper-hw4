@@ -117,13 +117,22 @@ class SerializerTest {
 
     @Test
     void testWriteArrays() {
-        Arrays op = new Arrays();
+        Arrays ar = new Arrays();
 
 
-        op.setList(new ArrayList<>(List.of(1, 2, 3)));
-        op.setSet(new TreeSet<>(List.of("fsd", "f2222")));
+        ar.setList(new ArrayList<>(List.of(1, 2, 3)));
+        ar.setSet(new TreeSet<>(List.of("fsd", "f2222")));
+        ar.setInnerList(
+                new LinkedList<>(
+                        List.of(
+                                new HashSet<>(List.of(1, 2, 3)),
+                                new TreeSet<>(List.of(5, 1))
+                        )
+                )
+        );
 
-        System.out.println(serializer.writeToString(op));
+
+        System.out.println(serializer.writeToString(ar));
     }
 
     @Test
@@ -136,8 +145,6 @@ class SerializerTest {
 
         Arrays arr = new Arrays();
 
-        arr.setList(new ArrayList<>(List.of(1, 2, 3)));
-        arr.setSet(new TreeSet<>(List.of("fsd", "f2222")));
         arr.setList(new ArrayList<>(List.of(1, 2, 3)));
         arr.setSet(new TreeSet<>(List.of("fsd", "f2222")));
 
@@ -342,7 +349,7 @@ class OnlyPrimitives {
 }
 
 @Exported
-class Arrays{
+class Arrays {
     public Arrays() {
 
     }
@@ -356,6 +363,12 @@ class Arrays{
 
     public void setSet(Set<String> set) {
         this.set = set;
+    }
+
+    private List<Set<Integer>> innerList;
+
+    public void setInnerList(List<Set<Integer>> innerList) {
+        this.innerList = innerList;
     }
 }
 
