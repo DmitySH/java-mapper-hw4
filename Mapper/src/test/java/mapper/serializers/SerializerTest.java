@@ -114,6 +114,39 @@ class SerializerTest {
 
         System.out.println(serializer.writeToString(op));
     }
+
+    @Test
+    void testWriteArrays() {
+        Arrays op = new Arrays();
+
+
+        op.setList(new ArrayList<>(List.of(1, 2, 3)));
+        op.setSet(new TreeSet<>(List.of("fsd", "f2222")));
+
+        System.out.println(serializer.writeToString(op));
+    }
+
+    @Test
+    void testWriteObjects() {
+        OnlyPrimitives op = new OnlyPrimitives();
+
+        op.setInteger(123);
+        op.setNum(4543);
+        op.setStr("fs");
+
+        Arrays arr = new Arrays();
+
+        arr.setList(new ArrayList<>(List.of(1, 2, 3)));
+        arr.setSet(new TreeSet<>(List.of("fsd", "f2222")));
+        arr.setList(new ArrayList<>(List.of(1, 2, 3)));
+        arr.setSet(new TreeSet<>(List.of("fsd", "f2222")));
+
+        ObjectsIn in = new ObjectsIn();
+        in.setArra(arr);
+        in.setOps(op);
+
+        System.out.println(serializer.writeToString(in));
+    }
 }
 
 
@@ -289,6 +322,7 @@ class OnlyPrimitives {
 
     }
 
+    @PropertyName("chislo")
     private Integer integer;
     public String str;
 
@@ -304,5 +338,40 @@ class OnlyPrimitives {
 
     public void setNum(int num) {
         this.num = num;
+    }
+}
+
+@Exported
+class Arrays{
+    public Arrays() {
+
+    }
+
+    private List<Integer> list;
+    private Set<String> set;
+
+    public void setList(List<Integer> list) {
+        this.list = list;
+    }
+
+    public void setSet(Set<String> set) {
+        this.set = set;
+    }
+}
+
+@Exported
+class ObjectsIn {
+    public ObjectsIn() {
+    }
+
+    Arrays arra;
+    OnlyPrimitives ops;
+
+    public void setArra(Arrays arra) {
+        this.arra = arra;
+    }
+
+    public void setOps(OnlyPrimitives ops) {
+        this.ops = ops;
     }
 }

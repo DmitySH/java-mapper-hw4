@@ -237,7 +237,6 @@ public class Serializer implements Mapper {
         private String serializeObject(Object obj) throws IllegalAccessException {
             Class<?> clazz = obj.getClass();
             StringBuilder sb = new StringBuilder();
-            Map<String, Pair<String, String>> elements = new HashMap<>();
             Set<String> fieldNames = getFieldNames(clazz);
 
             sb.append('{');
@@ -250,7 +249,6 @@ public class Serializer implements Mapper {
                     String dtFormat = field.isAnnotationPresent(DateFormat.class) ?
                             field.getAnnotation(DateFormat.class).value() : null;
 
-
                     if (converter.isPrimitiveOrWrapper(field.getType())) {
                         String type;
                         if (field.getType().toString().contains("class")) {
@@ -258,25 +256,49 @@ public class Serializer implements Mapper {
                         } else {
                             type = field.getType().toString();
                         }
+
                         // Key + type.
                         sb.append('\"');
                         sb.append(getPropertyName(field, fieldNames))
                                 .append('#').append(type);
                         sb.append('\"');
-                        
+
                         // Value.
                         sb.append(":\"");
                         sb.append(field.get(obj));
+                    } else if (converter.isListOrSet(field.getType())) {
+                        String type;
+                        type = field.getGenericType().toString();
+
+                        // Key + type.
                         sb.append('\"');
+                        sb.append(getPropertyName(field, fieldNames))
+                                .append('#').append(type);
+                        sb.append("\":");
+
+                        // Value.
+                        sb.append("ARR");
+                    } else {
+                        String type;
+                        if (field.getType().toString().contains("class")) {
+                            type = field.getType().toString().substring(6);
+                        } else {
+                            type = field.getType().toString();
+                        }
+
+                        // Key + type.
+                        sb.append('\"');
+                        sb.append(getPropertyName(field, fieldNames))
+                                .append('#').append(type);
+                        sb.append("\":");
+
+                        // Value.
+                        sb.append("obj");
                     }
-
                     sb.append(',');
-
-                    //elements.put(getPropertyName(field, fieldNames),
-                    // getFieldJson(field.get(object), dtFormat));
                 }
             }
-//            sb.append(clazz.getSimpleName()).append('#');
+
             int index;
             if ((index = sb.lastIndexOf(",")) != -1) {
                 sb.deleteCharAt(index);
