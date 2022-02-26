@@ -2,6 +2,7 @@ package mapper.utils;
 
 import mapper.exceptions.ExportMapperException;
 
+import java.lang.reflect.Field;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -9,7 +10,7 @@ import java.util.List;
 import java.util.Set;
 
 public class TypeConverter {
-    public Object convert(String value, Class<?> clazz) {
+    public Object convertToPrimitiveOrWrapper(String value, Class<?> clazz) {
         if (byte.class.equals(clazz) || Byte.class.equals(clazz)) {
             return Byte.valueOf(value);
         } else if (short.class.equals(clazz) || Short.class.equals(clazz)) {
@@ -29,9 +30,12 @@ public class TypeConverter {
         } else if (String.class.equals(clazz)) {
             return value;
         } else {
-            throw new ExportMapperException("Incorrect type of primitive field");
+            throw new IllegalArgumentException("Incorrect type of primitive field");
         }
     }
+
+
+
 
     public boolean isPrimitiveOrWrapper(Class<?> clazz) {
         return (clazz.isPrimitive() && clazz != void.class) ||
@@ -48,7 +52,7 @@ public class TypeConverter {
             }
         }
 
-        return false;
+        return clazz == Set.class || clazz == List.class;
     }
 
     public boolean isDateTime(Class<?> clazz) {

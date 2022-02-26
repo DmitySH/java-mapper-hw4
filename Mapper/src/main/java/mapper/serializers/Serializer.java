@@ -7,12 +7,11 @@ import mapper.annotations.PropertyName;
 import mapper.enums.NullHandling;
 import mapper.exceptions.ExportMapperException;
 import mapper.interfaces.Mapper;
+import mapper.utils.Pair;
 import mapper.utils.TypeConverter;
 
 import java.io.*;
-import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Modifier;
+import java.lang.reflect.*;
 import java.nio.charset.StandardCharsets;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.TemporalAccessor;
@@ -20,7 +19,84 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 public class Serializer implements Mapper {
-    private static final TypeConverter converter = new TypeConverter();
+    private final TypeConverter converter;
+    private final JsonWriter writer;
+    private final JsonReader reader;
+
+    public Serializer() {
+        converter = new TypeConverter();
+        writer = new JsonWriter();
+        reader = new JsonReader();
+    }
+
+    class JsonReader {
+        private Object createObject(Class<?> clazz) {
+            try {
+                return clazz.getDeclaredConstructor().newInstance();
+            } catch (InvocationTargetException |
+                    InstantiationException | IllegalAccessException |
+                    NoSuchMethodException e) {
+                throw new ExportMapperException(e.getMessage());
+            }
+        }
+
+        private Collection<?> parseCollection(String value, Field field) {
+            StringBuilder sb = new StringBuilder(value);
+            System.out.println(field.getGenericType());
+
+
+            int i = 0;
+            while (i < sb.length()) {
+
+            }
+
+            return null;
+        }
+
+        private Map<String, String> parseObject(String str) {
+            Map<String, String> elements = new HashMap<>();
+            StringBuilder sb = new StringBuilder(str);
+
+            int i = 0;
+            while (i < sb.length()) {
+                if (sb.charAt(i) == '\"') {
+                    // Getting key.
+                    int keyEnd = sb.indexOf("\"", i + 1);
+                    String key = sb.substring(i + 1, keyEnd);
+
+                    // Getting value.
+                    int valueEnd;
+                    if (sb.charAt(keyEnd + 2) == '[') {
+                        int opened = 1;
+                        i = keyEnd + 2;
+                        while (opened != 0) {
+                            ++i;
+                            if (sb.charAt(i) == ']') {
+                                opened--;
+                            } else if (sb.charAt(i) == '[') {
+                                opened++;
+                            }
+                        }
+
+                        valueEnd = i + 1;
+                        String array = sb.substring(keyEnd + 2, valueEnd);
+                        elements.put(key, array);
+                        i = valueEnd;
+                    } else if (sb.charAt(keyEnd + 2) == '\"') {
+                        valueEnd = sb.indexOf("\"", keyEnd + 3);
+                        String value = sb.substring(keyEnd + 3, valueEnd);
+                        elements.put(key, value);
+                        i = valueEnd + 1;
+                    }
+                } else {
+                    i++;
+                }
+            }
+
+            System.out.println(elements);
+            return elements;
+        }
+    }
 
     @Override
     public <T> T readFromString(Class<T> clazz, String input) {
@@ -37,11 +113,9 @@ public class Serializer implements Mapper {
             }
         }
 
+        Object obj = reader.createObject(clazz);
+        Map<String, String> elements = reader.parseObject(input);
 
-        Object obj = createObject(clazz);
-
-
-        Map<String, String> elements = parseObject(input);
         try {
             for (String elementName :
                     elements.keySet()) {
@@ -50,13 +124,17 @@ public class Serializer implements Mapper {
                 if (field.trySetAccessible()) {
                     Class<?> fieldType = field.getType();
                     if (converter.isPrimitiveOrWrapper(fieldType)) {
-                        field.set(obj, converter.convert(elements.get(elementName), fieldType));
+                        field.set(obj, converter.convertToPrimitiveOrWrapper(elements.get(elementName), fieldType));
+                    }
+                    if (converter.isListOrSet(fieldType)) {
+                        field.set(obj, reader.parseCollection(elements.get(elementName), field));
                     }
                 }
             }
         } catch (IllegalAccessException e) {
             throw new ExportMapperException("Can't get access to field\n\r" + e.getMessage());
         }
+
 
         return clazz.cast(obj);
     }
@@ -84,17 +162,148 @@ public class Serializer implements Mapper {
         return null;
     }
 
+    class JsonWriter {
+//        private String serializeToJson(Object object) throws IllegalAccessException {
+//            Class<?> clazz = object.getClass();
+//            Map<String, String> elements = new HashMap<>();
+//            Set<String> fieldNames = new HashSet<>();
+//
+//            boolean excludeNulls =
+//                    clazz.getAnnotation(Exported.class).nullHandling().equals(NullHandling.EXCLUDE);
+//
+//            for (Field field : clazz.getDeclaredFields()) {
+//                if (!field.isSynthetic() && !Modifier.isStatic(field.getModifiers())) {
+//                    fieldNames.add(field.getName());
+//                }
+//            }
+//
+//            for (Field field : clazz.getDeclaredFields()) {
+//                if (checkFieldIsSerializable(field, excludeNulls, object)) {
+//                    String dtFormat = field.isAnnotationPresent(DateFormat.class) ?
+//                            field.getAnnotation(DateFormat.class).value() : null;
+//                    elements.put(getPropertyName(field, fieldNames), getFieldJson(field.get(object), dtFormat));
+//                }
+//            }
+//
+//            String jsonString = elements.entrySet()
+//                    .stream()
+//                    .map(entry -> "\"" + entry.getKey() + "\":" + entry.getValue())
+//                    .collect(Collectors.joining(","));
+//
+//            return "{" + jsonString + "}";
+//        }
+
+        private String getFieldJson(Object obj, String dtFormat) {
+            Class<?> clazz = obj.getClass();
+            if (!isSerializableType(clazz)) {
+                throw new ExportMapperException("Type " + clazz.getSimpleName() +
+                        "can't be serialized with mapper");
+            }
+
+            if (clazz.isAnnotationPresent(Exported.class)) {
+                return writeToString(obj);
+            } else if (converter.isListOrSet(clazz)) {
+                return arrayToJson((Collection<?>) obj);
+            } else if (converter.isPrimitiveOrWrapper(clazz) || clazz.isEnum()) {
+                return primitiveOrEnumToJson(obj);
+            } else if (converter.isDateTime(clazz)) {
+                return dateTimeToJson(obj, dtFormat);
+            } else {
+                return String.valueOf(obj);
+            }
+        }
+
+        private String arrayToJson(Collection<?> collection) {
+            String jsonString = collection.stream().map(elem -> getFieldJson(elem, null))
+                    .collect(Collectors.joining(","));
+            return "[" + jsonString + "]";
+        }
+
+        private String primitiveOrEnumToJson(Object primitive) {
+            return "\"" + primitive + "\"";
+        }
+
+        private String dateTimeToJson(Object obj, String dtFormat) {
+            if (dtFormat != null) {
+                DateTimeFormatter formatter = DateTimeFormatter.ofPattern(dtFormat);
+                return "\"" + formatter.format((TemporalAccessor) obj) + "\"";
+            } else {
+                return "\"" + obj + "\"";
+            }
+        }
+
+
+        // TODO
+        private String serializeObject(Object obj) throws IllegalAccessException {
+            Class<?> clazz = obj.getClass();
+            StringBuilder sb = new StringBuilder();
+            Map<String, Pair<String, String>> elements = new HashMap<>();
+            Set<String> fieldNames = getFieldNames(clazz);
+
+            sb.append('{');
+
+            boolean excludeNulls =
+                    clazz.getAnnotation(Exported.class).nullHandling().equals(NullHandling.EXCLUDE);
+
+            for (Field field : clazz.getDeclaredFields()) {
+                if (checkFieldIsSerializable(field, excludeNulls, obj)) {
+                    String dtFormat = field.isAnnotationPresent(DateFormat.class) ?
+                            field.getAnnotation(DateFormat.class).value() : null;
+
+
+                    if (converter.isPrimitiveOrWrapper(field.getType())) {
+                        String type;
+                        if (field.getType().toString().contains("class")) {
+                            type = field.getType().toString().substring(6);
+                        } else {
+                            type = field.getType().toString();
+                        }
+                        // Key + type.
+                        sb.append('\"');
+                        sb.append(getPropertyName(field, fieldNames))
+                                .append('#').append(type);
+                        sb.append('\"');
+                        
+                        // Value.
+                        sb.append(":\"");
+                        sb.append(field.get(obj));
+                        sb.append('\"');
+                    }
+
+                    sb.append(',');
+
+                    //elements.put(getPropertyName(field, fieldNames),
+                    // getFieldJson(field.get(object), dtFormat));
+                }
+            }
+//            sb.append(clazz.getSimpleName()).append('#');
+            int index;
+            if ((index = sb.lastIndexOf(",")) != -1) {
+                sb.deleteCharAt(index);
+            }
+            sb.append('}');
+
+            return sb.toString();
+        }
+
+        private String serializeToJson(Object obj) {
+            try {
+                return serializeObject(obj);
+            } catch (IllegalAccessException e) {
+                throw new ExportMapperException("Can't get access to field\n\r" + e.getMessage());
+            }
+        }
+    }
+
     @Override
     public String writeToString(Object object) {
         try {
             checkObjectExportation(object);
-            return serializeToJson(object);
+            return writer.serializeToJson(object);
         } catch (Exception e) {
             throw new ExportMapperException(e.getMessage());
         }
     }
-
-
 
     @Override
     public void write(Object object, OutputStream outputStream) throws IOException {
@@ -110,15 +319,6 @@ public class Serializer implements Mapper {
         }
     }
 
-    private Object createObject(Class<?> clazz) {
-        try {
-            return clazz.getDeclaredConstructor().newInstance();
-        } catch (InvocationTargetException |
-                InstantiationException | IllegalAccessException |
-                NoSuchMethodException e) {
-            throw new ExportMapperException(e.getMessage());
-        }
-    }
 
     private void checkObjectExportation(Object object) {
         if (Objects.isNull(object)) {
@@ -147,85 +347,32 @@ public class Serializer implements Mapper {
         }
     }
 
-    private String serializeToJson(Object object) throws IllegalAccessException {
-        Class<?> clazz = object.getClass();
-        Map<String, String> elements = new HashMap<>();
+    private boolean checkFieldIsSerializable(Field field, boolean excludeNulls,
+                                             Object object) {
+
+        if (!field.isSynthetic() && !Modifier.isStatic(field.getModifiers())) {
+            if (field.trySetAccessible() && !field.isAnnotationPresent(Ignored.class)) {
+                try {
+                    return !excludeNulls || field.get(object) != null;
+                } catch (IllegalAccessException e) {
+                    throw new ExportMapperException("Can't get acess to field " +
+                            field.getName() + " of " + object.getClass());
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private Set<String> getFieldNames(Class<?> clazz) {
         Set<String> fieldNames = new HashSet<>();
-
-        boolean excludeNulls =
-                clazz.getAnnotation(Exported.class).nullHandling().equals(NullHandling.EXCLUDE);
-
         for (Field field : clazz.getDeclaredFields()) {
             if (!field.isSynthetic() && !Modifier.isStatic(field.getModifiers())) {
                 fieldNames.add(field.getName());
             }
         }
 
-        for (Field field : clazz.getDeclaredFields()) {
-            if (checkFieldIsSerializable(field, excludeNulls, object)) {
-                String dtFormat = field.isAnnotationPresent(DateFormat.class) ?
-                        field.getAnnotation(DateFormat.class).value() : null;
-                elements.put(getPropertyName(field, fieldNames), getFieldJson(field.get(object), dtFormat));
-            }
-        }
-
-        String jsonString = elements.entrySet()
-                .stream()
-                .map(entry -> "\"" + entry.getKey() + "\":" + entry.getValue())
-                .collect(Collectors.joining(","));
-
-        return "{" + jsonString + "}";
-    }
-
-
-    private String arrayToJson(Collection<?> collection) {
-        String jsonString = collection.stream().map(elem -> getFieldJson(elem, null))
-                .collect(Collectors.joining(","));
-        return "[" + jsonString + "]";
-    }
-
-    private String primitiveOrEnumToJson(Object primitive) {
-        return "\"" + primitive + "\"";
-    }
-
-    private String dateTimeToJson(Object obj, String dtFormat) {
-        if (dtFormat != null) {
-            DateTimeFormatter formatter = DateTimeFormatter.ofPattern(dtFormat);
-            return "\"" + formatter.format((TemporalAccessor) obj) + "\"";
-        } else {
-            return "\"" + obj + "\"";
-        }
-    }
-
-    private String getFieldJson(Object obj, String dtFormat) {
-        Class<?> clazz = obj.getClass();
-        if (!isSerializableType(clazz)) {
-            throw new ExportMapperException("Type " + clazz.getSimpleName() +
-                    "can't be serialized with mapper");
-        }
-
-        if (clazz.isAnnotationPresent(Exported.class)) {
-            return writeToString(obj);
-        } else if (converter.isListOrSet(clazz)) {
-            return arrayToJson((Collection<?>) obj);
-        } else if (converter.isPrimitiveOrWrapper(clazz) || clazz.isEnum()) {
-            return primitiveOrEnumToJson(obj);
-        } else if (converter.isDateTime(clazz)) {
-            return dateTimeToJson(obj, dtFormat);
-        } else {
-            return String.valueOf(obj);
-        }
-    }
-
-    private boolean checkFieldIsSerializable(Field field, boolean excludeNulls,
-                                             Object object) throws IllegalAccessException {
-        if (!field.isSynthetic() && !Modifier.isStatic(field.getModifiers())) {
-            if (field.trySetAccessible() && !field.isAnnotationPresent(Ignored.class)) {
-                return !excludeNulls || field.get(object) != null;
-            }
-        }
-
-        return false;
+        return fieldNames;
     }
 
     private String getPropertyName(Field field, Set<String> fieldNames) {
@@ -240,28 +387,6 @@ public class Serializer implements Mapper {
         }
 
         return value.isEmpty() ? field.getName() : value;
-    }
-
-    private Map<String, String> parseObject(String str) {
-        Map<String, String> elements = new HashMap<>();
-        StringBuilder sb = new StringBuilder(str);
-
-        int i = 0;
-        while (i < sb.length()) {
-            if (sb.charAt(i) == '\"') {
-                int keyEnd = sb.indexOf("\"", i + 1);
-                String key = sb.substring(i + 1, keyEnd);
-
-                int valueEnd = sb.indexOf("\"", keyEnd + 3);
-                String value = sb.substring(keyEnd + 3, valueEnd);
-                elements.put(key, value);
-                i = valueEnd + 1;
-            } else {
-                i++;
-            }
-        }
-        System.out.println(elements);
-        return elements;
     }
 
     public boolean isSerializableType(Class<?> clazz) {

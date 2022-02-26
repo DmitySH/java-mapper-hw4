@@ -15,10 +15,7 @@ import java.io.*;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -55,15 +52,7 @@ class SerializerTest {
 
     @Test
     void readString() {
-        ReviewComment comment = new ReviewComment();
-        comment.setComment("KlakClik");
-        String str = assertDoesNotThrow(() -> serializer.writeToString(comment));
-        System.out.println(str);
-//        GoodClass obj = new GoodClass();
-//        str = assertDoesNotThrow(()->serializer.writeToString(obj));
 
-        ReviewComment com = serializer.readFromString(ReviewComment.class, str);
-        System.out.println(serializer.writeToString(com));
     }
 
 
@@ -105,7 +94,6 @@ class SerializerTest {
         assertEquals(assertDoesNotThrow(() ->
                 serializer.writeToString(new IncludeNullClass())), "{\"integer\":\"null\"}");
 
-
     }
 
     @Test
@@ -114,6 +102,17 @@ class SerializerTest {
 
     @Test
     void testWrite() {
+    }
+
+    @Test
+    void testWritePrimitives() {
+        OnlyPrimitives op = new OnlyPrimitives();
+
+        op.setInteger(123);
+        op.setNum(4543);
+        op.setStr("fs");
+
+        System.out.println(serializer.writeToString(op));
     }
 }
 
@@ -189,6 +188,26 @@ class SameNameClass {
 }
 
 @Exported
+class WithListClass {
+    public WithListClass() {
+
+    }
+
+    @PropertyName("List")
+    private List<List<Integer>> lllist;
+
+    private String str;
+
+    public void setLllist(List<List<Integer>> lllist) {
+        this.lllist = lllist;
+    }
+
+    public void setStr(String str) {
+        this.str = str;
+    }
+}
+
+@Exported
 class ReviewComment {
     public ReviewComment() {
     }
@@ -215,7 +234,7 @@ class ReviewComment {
             List.of(
                     new ArrayList<>(List.of(
                             new SmallGoodClass(), new SmallGoodClass())),
-            new ArrayList<>(List.of(new SmallGoodClass()))
+                    new ArrayList<>(List.of(new SmallGoodClass()))
             ));
     @PropertyName("MegByte")
     Byte b = 43;
@@ -262,4 +281,28 @@ class IncludeNullClass {
     }
 
     private final Integer integer = null;
+}
+
+@Exported
+class OnlyPrimitives {
+    public OnlyPrimitives() {
+
+    }
+
+    private Integer integer;
+    public String str;
+
+    private int num;
+
+    public void setInteger(Integer integer) {
+        this.integer = integer;
+    }
+
+    public void setStr(String str) {
+        this.str = str;
+    }
+
+    public void setNum(int num) {
+        this.num = num;
+    }
 }
