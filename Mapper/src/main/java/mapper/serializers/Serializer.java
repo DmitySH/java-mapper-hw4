@@ -12,10 +12,12 @@ import mapper.utils.TypeConverter;
 import java.io.*;
 import java.lang.reflect.*;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.TemporalAccessor;
 import java.util.*;
-import java.util.stream.Collectors;
 
 public class Serializer implements Mapper {
     private final TypeConverter converter;
@@ -31,7 +33,7 @@ public class Serializer implements Mapper {
     class JsonReader {
         private Object parseObject(Class<?> clazz, String str) {
             StringBuilder sb = new StringBuilder(str);
-            if (!isSerializableType(clazz)) {
+            if (isNotSerializableType(clazz)) {
                 throw new ExportMapperException("Type " + clazz.getSimpleName() + " is not exportable");
             }
 
@@ -68,7 +70,7 @@ public class Serializer implements Mapper {
 
                         if (converter.isPrimitiveOrWrapper(fieldType)) {
                             int typeEnd = str.indexOf("\"", keyEnd);
-                            String typeStr = str.substring(keyEnd + 1, typeEnd);
+//                            String typeStr = str.substring(keyEnd + 1, typeEnd);
 //                            System.out.println(typeStr);
 
                             valueEnd = str.indexOf("\"", typeEnd + 3);
@@ -76,6 +78,17 @@ public class Serializer implements Mapper {
 //                            System.out.println(value);
 
                             field.set(obj, converter.convertToPrimitiveOrWrapper(value, fieldType));
+                            i = valueEnd + 2;
+                        } else if (converter.isDateTime(fieldType)) {
+                            int typeEnd = str.indexOf("\"", keyEnd);
+//                            String typeStr = str.substring(keyEnd + 1, typeEnd);
+
+                            valueEnd = str.indexOf("\"", typeEnd + 3);
+                            String value = str.substring(typeEnd + 3, valueEnd);
+
+                            Object dt;
+                            dt = parseDateTime(field, fieldType, value);
+                            field.set(obj, dt);
                             i = valueEnd + 2;
                         } else if (converter.isListOrSet(fieldType)) {
                             int typeEnd = str.indexOf("\"", keyEnd);
@@ -134,12 +147,48 @@ public class Serializer implements Mapper {
             return obj;
         }
 
+        private Object parseDateTime(Field field, Class<?> fieldType, String value) {
+            Object dt;
+            if (field.isAnnotationPresent(DateFormat.class)) {
+                DateTimeFormatter timeFormatter =
+                        DateTimeFormatter.ofPattern(field.getAnnotation(DateFormat.class).value());
+
+                if (LocalDate.class.equals(fieldType)) {
+                    dt = LocalDate.parse(value, timeFormatter);
+                } else if (LocalTime.class.equals(fieldType)) {
+                    dt = LocalTime.parse(value, timeFormatter);
+                } else {
+                    dt = LocalDateTime.parse(value, timeFormatter);
+                }
+            } else {
+                dt = parseNotFormattedDateTime(fieldType, value);
+            }
+
+            return dt;
+        }
+
+        private Object parseNotFormattedDateTime(Class<?> type, String value) {
+            Object dt;
+            if (LocalDate.class.equals(type)) {
+                dt = LocalDate.parse(value);
+            } else if (LocalTime.class.equals(type)) {
+                dt = LocalTime.parse(value);
+            } else {
+                dt = LocalDateTime.parse(value);
+            }
+
+            return dt;
+        }
+
         private Collection<Object> parseCollection(Class<?> collectionType, String str) throws ClassNotFoundException {
 
-            if (!isSerializableType(collectionType)) {
+            if (isNotSerializableType(collectionType)) {
                 throw new ExportMapperException("Type " + collectionType.getSimpleName() + " is not exportable");
             }
 
+            // Here we can use only createObject with parameter == type of collection to be created.
+            // It is always collection, and we can put there any Object.
+            @SuppressWarnings("unchecked")
             Collection<Object> collection = (Collection<Object>) createObject(collectionType);
             StringBuilder sb = new StringBuilder(str);
 
@@ -163,6 +212,14 @@ public class Serializer implements Mapper {
                     collection.add(converter.convertToPrimitiveOrWrapper(value, innerClass));
 
                     i = valueEnd + 2;
+                } else if (converter.isDateTime(innerClass)) {
+                    int valueEnd = sb.indexOf("\"", innerTypeEnd + 3);
+                    String value = sb.substring(innerTypeEnd + 3, valueEnd);
+
+                    Object dt = parseNotFormattedDateTime(innerClass, value);
+                    collection.add(dt);
+
+                    i = valueEnd + 2;
                 } else if (converter.isListOrSet(innerClass)) {
                     int opened = 1;
                     int pos = innerTypeEnd + 3;
@@ -177,7 +234,7 @@ public class Serializer implements Mapper {
 
                     String col = sb.substring(innerTypeEnd + 2, pos);
                     Object value = parseCollection(innerClass, col);
-                    System.out.println(value);
+//                    System.out.println(value);
                     collection.add(value);
                     i = pos + 1;
                 } else {
@@ -208,40 +265,6 @@ public class Serializer implements Mapper {
     @Override
     public <T> T readFromString(Class<T> clazz, String input) {
         checkClassExportation(clazz);
-//        Map<String, Field> fields = new HashMap<>();
-//        for (Field field : clazz.getDeclaredFields()) {
-//            if (!field.isSynthetic() && !Modifier.isStatic(field.getModifiers())
-//                    && !field.isAnnotationPresent(Ignored.class)) {
-//                if (field.isAnnotationPresent(PropertyName.class)) {
-//                    fields.put(field.getAnnotation(PropertyName.class).value(), field);
-//                } else {
-//                    fields.put(field.getName(), field);
-//                }
-//            }
-//        }
-//
-//        Object obj = createObject(clazz);
-//        Map<String, String> elements = reader.parseObject(input);
-
-//        try {
-//            for (String elementName :
-//                    elements.keySet()) {
-//                Field field = fields.get(elementName);
-//
-//                if (field.trySetAccessible()) {
-//                    Class<?> fieldType = field.getType();
-//                    if (converter.isPrimitiveOrWrapper(fieldType)) {
-//                        field.set(obj, converter.convertToPrimitiveOrWrapper(elements.get(elementName), fieldType));
-//                    }
-//                    if (converter.isListOrSet(fieldType)) {
-//                        field.set(obj, reader.parseCollection(elements.get(elementName), field));
-//                    }
-//                }
-//            }
-//        } catch (IllegalAccessException e) {
-//            throw new ExportMapperException("Can't get access to field\n\r" + e.getMessage());
-//        }
-
 
         return clazz.cast(reader.parseObject(clazz, input));
     }
@@ -270,40 +293,6 @@ public class Serializer implements Mapper {
     }
 
     class JsonWriter {
-//        private String serializeToJson(Object object) throws IllegalAccessException {
-//            Class<?> clazz = object.getClass();
-//            Map<String, String> elements = new HashMap<>();
-//            Set<String> fieldNames = new HashSet<>();
-//
-//            boolean excludeNulls =
-//                    clazz.getAnnotation(Exported.class).nullHandling().equals(NullHandling.EXCLUDE);
-//
-//            for (Field field : clazz.getDeclaredFields()) {
-//                if (!field.isSynthetic() && !Modifier.isStatic(field.getModifiers())) {
-//                    fieldNames.add(field.getName());
-//                }
-//            }
-//
-//            for (Field field : clazz.getDeclaredFields()) {
-//                if (checkFieldIsSerializable(field, excludeNulls, object)) {
-//                    String dtFormat = field.isAnnotationPresent(DateFormat.class) ?
-//                            field.getAnnotation(DateFormat.class).value() : null;
-//                    elements.put(getPropertyName(field, fieldNames), getFieldJson(field.get(object), dtFormat));
-//                }
-//            }
-//
-//            String jsonString = elements.entrySet()
-//                    .stream()
-//                    .map(entry -> "\"" + entry.getKey() + "\":" + entry.getValue())
-//                    .collect(Collectors.joining(","));
-//
-//            return "{" + jsonString + "}";
-//        }
-
-
-        // TODO: objects
-
-
         private String serializeObject(Object obj) {
             Class<?> clazz = obj.getClass();
             StringBuilder sb = new StringBuilder();
@@ -316,9 +305,6 @@ public class Serializer implements Mapper {
 
             for (Field field : clazz.getDeclaredFields()) {
                 if (checkFieldIsSerializable(field, excludeNulls, obj)) {
-                    String dtFormat = field.isAnnotationPresent(DateFormat.class) ?
-                            field.getAnnotation(DateFormat.class).value() : null;
-
                     try {
                         if (converter.isPrimitiveOrWrapper(field.getType())) {
                             String type = field.getType().getName();
@@ -333,14 +319,33 @@ public class Serializer implements Mapper {
                             sb.append(":\"");
                             sb.append(field.get(obj));
                             sb.append("\"");
+                        } else if (converter.isDateTime(field.getType())) {
+                            String type = field.getType().getName();
+                            String dtFormat = field.isAnnotationPresent(DateFormat.class) ?
+                                    field.getAnnotation(DateFormat.class).value() : null;
+
+                            String res;
+                            if (dtFormat != null) {
+                                DateTimeFormatter timeColonFormatter = DateTimeFormatter.ofPattern(dtFormat);
+                                res = timeColonFormatter.format((TemporalAccessor) field.get(obj));
+                            } else {
+                                res = field.get(obj).toString();
+                            }
+
+                            // Key + type.
+                            sb.append('\"');
+                            sb.append(getPropertyName(field, fieldNames))
+                                    .append('#').append(type);
+                            sb.append('\"');
+
+                            // Value.
+                            sb.append(":\"");
+                            sb.append(res);
+                            sb.append("\"");
+
                         } else if (converter.isListOrSet(field.getType())) {
-//                        Object instance = createObject(field.getClass());
-//                        System.out.println(instance.getClass());
                             String realType = field.get(obj).getClass().getName();
                             String abstractType = field.getGenericType().getTypeName();
-//                        System.out.println(realType);
-//                        System.out.println(field.get(obj).getClass());
-
 
                             // Key + type.
                             sb.append('\"');
@@ -379,8 +384,6 @@ public class Serializer implements Mapper {
             return sb.toString();
         }
 
-        // TODO: arrays
-
 
         private String serializeArray(Collection<?> array) {
             StringBuilder sb = new StringBuilder();
@@ -394,11 +397,11 @@ public class Serializer implements Mapper {
 
             for (Object obj : array) {
                 Class<?> clazz = obj.getClass();
-                if (!isSerializableType(clazz)) {
+                if (isNotSerializableType(clazz)) {
                     throw new ExportMapperException("Type " + clazz.getSimpleName() + " is not exportable");
                 }
 
-                if (converter.isPrimitiveOrWrapper(clazz)) {
+                if (converter.isPrimitiveOrWrapper(clazz) || converter.isDateTime(clazz)) {
                     String type = clazz.getName();
 
                     // Key + type.
@@ -543,10 +546,10 @@ public class Serializer implements Mapper {
         return value.isEmpty() ? field.getName() : value;
     }
 
-    public boolean isSerializableType(Class<?> clazz) {
-        return converter.isPrimitiveOrWrapper(clazz) || converter.isListOrSet(clazz) ||
-                converter.isDateTime(clazz) || clazz.isEnum() ||
-                clazz.isAnnotationPresent(Exported.class);
+    public boolean isNotSerializableType(Class<?> clazz) {
+        return !converter.isPrimitiveOrWrapper(clazz) && !converter.isListOrSet(clazz) &&
+                !converter.isDateTime(clazz) && !clazz.isEnum() &&
+                !clazz.isAnnotationPresent(Exported.class);
     }
 
     private Object createObject(Class<?> clazz) {

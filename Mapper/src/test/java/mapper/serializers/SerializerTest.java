@@ -227,6 +227,14 @@ class SerializerTest {
 
 
         arToColOne.setOp(innerOp);
+
+        TimeClass tc = new TimeClass();
+        tc.setListDate(new ArrayList<>(List.of(LocalDate.now(), LocalDate.of(2002, 11, 23))));
+        tc.setListTime(new LinkedList<>(List.of(LocalTime.now())));
+        tc.setListDateTime(new ArrayList<>(List.of(LocalDateTime.now())));
+
+        arToColOne.setTc(tc);
+
         in.setLotOfArr(
                 new LinkedList<>(List.of(arToColOne, new Arrays()))
         );
@@ -238,6 +246,24 @@ class SerializerTest {
         String str2 = serializer.writeToString(serializer.readFromString(ObjectsIn.class, str));
         System.out.println(str2);
         assertEquals(str, str2);
+    }
+
+    @Test
+    void testDtFormat() {
+        TimeClass tc = new TimeClass();
+
+        tc.setListDate(new ArrayList<>(List.of(LocalDate.now(), LocalDate.of(2002, 11, 23))));
+        tc.setListTime(new LinkedList<>(List.of(LocalTime.now())));
+        tc.setListDateTime(new ArrayList<>(List.of(LocalDateTime.now())));
+        String str = serializer.writeToString(tc);
+        System.out.println(str);
+
+        String str2 = serializer.writeToString(serializer.readFromString(TimeClass.class, str));
+        System.out.println(str2);
+
+        assertEquals(str, str2);
+
+
     }
 }
 
@@ -330,6 +356,40 @@ class WithListClass {
     public void setStr(String str) {
         this.str = str;
     }
+}
+
+@Exported
+class TimeClass {
+    public TimeClass() {
+    }
+
+    LocalDate lDate = LocalDate.now();
+    LocalTime lTime = LocalTime.now();
+    LocalDateTime ldT = LocalDateTime.now();
+
+    @DateFormat("dd/MM/yyyy")
+    LocalDate lDateFormatted = LocalDate.now();
+    @DateFormat("hh:mm:ss a")
+    LocalTime lTimeFormatted = LocalTime.now();
+    @DateFormat("yyyy/MM/dd HH-mm")
+    LocalDateTime ldTFormatted = LocalDateTime.now();
+
+    List<LocalDate> listDate;
+    List<LocalTime> listTime;
+
+    public void setListDate(List<LocalDate> listDate) {
+        this.listDate = listDate;
+    }
+
+    public void setListTime(List<LocalTime> listTime) {
+        this.listTime = listTime;
+    }
+
+    public void setListDateTime(List<LocalDateTime> listDateTime) {
+        this.listDateTime = listDateTime;
+    }
+
+    List<LocalDateTime> listDateTime;
 }
 
 @Exported
@@ -448,6 +508,13 @@ class Arrays {
     private Set<String> set;
 
     OnlyPrimitives op;
+
+
+    TimeClass tc;
+
+    public void setTc(TimeClass tc) {
+        this.tc = tc;
+    }
 
     public void setOp(OnlyPrimitives op) {
         this.op = op;
