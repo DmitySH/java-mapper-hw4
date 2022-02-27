@@ -46,7 +46,10 @@ class SerializerTest {
     void readWriteFile() {
         GoodClass obj = new GoodClass();
         assertDoesNotThrow(() -> serializer.write(obj, new File("src/test/files/test1")));
-        assertDoesNotThrow(() -> serializer.read(GoodClass.class, new File("src/test/files/test1")));
+        GoodClass des = assertDoesNotThrow(() -> serializer.read(GoodClass.class, new File("src/test/files/test1")));
+
+        assertEquals(serializer.writeToString(obj), serializer.writeToString(des));
+
     }
 
     @Test
@@ -70,11 +73,11 @@ class SerializerTest {
         assertThrows(ExportMapperException.class,
                 () -> serializer.writeToString(new SubClass()));
 
-        System.out.println(assertDoesNotThrow(() ->
-                serializer.writeToString(new GoodClass())));
+        assertDoesNotThrow(() ->
+                serializer.writeToString(new GoodClass()));
 
-        System.out.println(assertDoesNotThrow(() ->
-                serializer.writeToString(new EmptyClass())));
+        assertDoesNotThrow(() ->
+                serializer.writeToString(new EmptyClass()));
 
         assertThrows(ExportMapperException.class,
                 () -> serializer.writeToString(new SameNameClass()));
@@ -97,12 +100,10 @@ class SerializerTest {
         op.setStr("fs");
 
         String str = serializer.writeToString(op);
-        System.out.println(str);
 
         OnlyPrimitives des = serializer.readFromString(OnlyPrimitives.class, str);
 
         String str2 = serializer.writeToString(des);
-        System.out.println(str2);
 
         assertEquals(str, str2);
 
@@ -135,10 +136,8 @@ class SerializerTest {
         ));
 
         String str = serializer.writeToString(ar);
-        System.out.println(str);
 
         String str2 = serializer.writeToString(serializer.readFromString(Arrays.class, str));
-        System.out.println(str2);
         assertEquals(str, str2);
     }
 
@@ -225,9 +224,7 @@ class SerializerTest {
         in.setEmpty(new HashSet<>());
 
         String str = serializer.writeToString(in);
-        System.out.println(str);
         String str2 = serializer.writeToString(serializer.readFromString(ObjectsIn.class, str));
-        System.out.println(str2);
         assertEquals(str, str2);
     }
 
@@ -239,10 +236,8 @@ class SerializerTest {
         tc.setListTime(new LinkedList<>(List.of(LocalTime.now())));
         tc.setListDateTime(new ArrayList<>(List.of(LocalDateTime.now())));
         String str = serializer.writeToString(tc);
-        System.out.println(str);
 
         String str2 = serializer.writeToString(serializer.readFromString(TimeClass.class, str));
-        System.out.println(str2);
 
         assertEquals(str, str2);
 

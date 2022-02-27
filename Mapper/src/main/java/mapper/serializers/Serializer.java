@@ -278,8 +278,7 @@ public class Serializer implements Mapper {
             buf.write((byte) result);
         }
 
-        System.out.println(buf.toString(StandardCharsets.UTF_8));
-        return null;
+        return clazz.cast(reader.parseObject(clazz, buf.toString(StandardCharsets.UTF_8)));
     }
 
     @Override
@@ -289,8 +288,7 @@ public class Serializer implements Mapper {
             strObject = reader.readLine();
         }
 
-        System.out.println(strObject);
-        return null;
+        return clazz.cast(reader.parseObject(clazz,strObject));
     }
 
     class JsonWriter {
