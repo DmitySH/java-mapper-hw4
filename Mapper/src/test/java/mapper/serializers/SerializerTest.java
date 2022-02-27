@@ -7,7 +7,6 @@ import mapper.annotations.PropertyName;
 import mapper.enums.NullHandling;
 import mapper.exceptions.ExportMapperException;
 import mapper.interfaces.Mapper;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -79,21 +78,6 @@ class SerializerTest {
 
         assertThrows(ExportMapperException.class,
                 () -> serializer.writeToString(new SameNameClass()));
-
-        ReviewComment reviewComment = new ReviewComment();
-        reviewComment.setComment("Одни static'и в работе");
-        reviewComment.setResolved(false);
-        reviewComment.setAuthor("Проверяющий #1");
-
-        assertEquals(assertDoesNotThrow(() ->
-                        serializer.writeToString(reviewComment)),
-                "{\"comment\":\"Одни static'и в работе\",\"resolved\":\"false\"}");
-
-        assertEquals(assertDoesNotThrow(() ->
-                serializer.writeToString(new ExcludeNullClass())), "{}");
-        assertEquals(assertDoesNotThrow(() ->
-                serializer.writeToString(new IncludeNullClass())), "{\"integer\":\"null\"}");
-
     }
 
     @Test
@@ -127,7 +111,6 @@ class SerializerTest {
     @Test
     void testWriteArrays() {
         Arrays ar = new Arrays();
-
 
         ar.setList(new ArrayList<>(List.of(1, 2, 3)));
         ar.setSet(new TreeSet<>(List.of("ku", "ka", "re", "ku")));
@@ -265,6 +248,22 @@ class SerializerTest {
 
 
     }
+
+    @Test
+    void testCycle() {
+        CycleClassHelper helper = new CycleClassHelper();
+        CycleClass cycle = new CycleClass();
+
+        helper.setCycle(cycle);
+        cycle.setHelper(helper);
+
+        assertThrows(ExportMapperException.class, ()->serializer.writeToString(cycle));
+
+        PrimitiveCycle primitiveCycle = new PrimitiveCycle();
+        primitiveCycle.setCycle(primitiveCycle);
+
+        assertThrows(ExportMapperException.class, ()->serializer.writeToString(primitiveCycle));
+    }
 }
 
 
@@ -318,17 +317,6 @@ class GoodClass {
 }
 
 @Exported
-class SmallGoodClass {
-
-    public SmallGoodClass() {
-    }
-
-
-    String str = "st";
-    int intField = 123;
-}
-
-@Exported
 class SameNameClass {
     public SameNameClass() {
     }
@@ -338,23 +326,40 @@ class SameNameClass {
     int intField = 5;
 }
 
+
 @Exported
-class WithListClass {
-    public WithListClass() {
-
+class CycleClass{
+    public CycleClass() {
     }
 
-    @PropertyName("List")
-    private List<List<Integer>> lllist;
+    private CycleClassHelper helper;
 
-    private String str;
+    public void setHelper(CycleClassHelper helper) {
+        this.helper = helper;
+    }
+}
 
-    public void setLllist(List<List<Integer>> lllist) {
-        this.lllist = lllist;
+@Exported
+class CycleClassHelper{
+    public CycleClassHelper() {
     }
 
-    public void setStr(String str) {
-        this.str = str;
+    private CycleClass cycle;
+
+    public void setCycle(CycleClass cycle) {
+        this.cycle = cycle;
+    }
+}
+
+@Exported
+class PrimitiveCycle{
+    public PrimitiveCycle() {
+    }
+
+    private PrimitiveCycle cycle;
+
+    public void setCycle(PrimitiveCycle cycle) {
+        this.cycle = cycle;
     }
 }
 
@@ -390,66 +395,6 @@ class TimeClass {
     }
 
     List<LocalDateTime> listDateTime;
-}
-
-@Exported
-class ReviewComment {
-    public ReviewComment() {
-    }
-
-    private final NullHandling enu = NullHandling.EXCLUDE;
-
-    private String comment;
-    @Ignored
-    private String author;
-    private boolean resolved;
-    Boolean annBul = true;
-
-    LocalDate lDate = LocalDate.now();
-    @DateFormat("hh:mm:ss a")
-    LocalTime lTime = LocalTime.now();
-    LocalDateTime ldT = LocalDateTime.now();
-
-    @PropertyName("List")
-    List<List<Integer>> lllist = new ArrayList<>(
-            List.of(new ArrayList<>(List.of(1, 2, 3)),
-                    new ArrayList<>(List.of(5, 2, 2))));
-
-    List<List<SmallGoodClass>> coms = new ArrayList<>(
-            List.of(
-                    new ArrayList<>(List.of(
-                            new SmallGoodClass(), new SmallGoodClass())),
-                    new ArrayList<>(List.of(new SmallGoodClass()))
-            ));
-    @PropertyName("MegByte")
-    Byte b = 43;
-
-    char ch = 'q';
-    Character wCharr = 'W';
-
-    public String getComment() {
-        return comment;
-    }
-
-    public void setComment(String comment) {
-        this.comment = comment;
-    }
-
-    public String getAuthor() {
-        return author;
-    }
-
-    public void setAuthor(String author) {
-        this.author = author;
-    }
-
-    public boolean isResolved() {
-        return resolved;
-    }
-
-    public void setResolved(boolean resolved) {
-        this.resolved = resolved;
-    }
 }
 
 @Exported(nullHandling = NullHandling.EXCLUDE)

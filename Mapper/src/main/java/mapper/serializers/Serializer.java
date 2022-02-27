@@ -23,6 +23,7 @@ public class Serializer implements Mapper {
     private final TypeConverter converter;
     private final JsonWriter writer;
     private final JsonReader reader;
+    private Set<Object> colors;
 
     public Serializer() {
         converter = new TypeConverter();
@@ -294,6 +295,7 @@ public class Serializer implements Mapper {
 
     class JsonWriter {
         private String serializeObject(Object obj) {
+            checkForCycles(obj);
             Class<?> clazz = obj.getClass();
             StringBuilder sb = new StringBuilder();
             Set<String> fieldNames = getFieldNames(clazz);
@@ -381,6 +383,8 @@ public class Serializer implements Mapper {
             }
             sb.append('}');
 
+            colors.remove(obj);
+
             return sb.toString();
         }
 
@@ -445,18 +449,14 @@ public class Serializer implements Mapper {
 
             return sb.toString();
         }
-
-
-        private String serializeToJson(Object obj) {
-            return serializeObject(obj);
-        }
     }
 
     @Override
     public String writeToString(Object object) {
         try {
             checkObjectExportation(object);
-            return writer.serializeToJson(object);
+            colors = new HashSet<>();
+            return writer.serializeObject(object);
         } catch (Exception e) {
             throw new ExportMapperException(e.getMessage());
         }
@@ -560,5 +560,13 @@ public class Serializer implements Mapper {
                 NoSuchMethodException e) {
             throw new ExportMapperException(e.getMessage());
         }
+    }
+
+    private void checkForCycles(Object obj) {
+        if (colors.contains(obj)) {
+            throw new ExportMapperException("There is cycle for object of " + obj.getClass());
+        }
+
+        colors.add(obj);
     }
 }
