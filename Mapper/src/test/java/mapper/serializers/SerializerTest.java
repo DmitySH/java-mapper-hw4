@@ -112,7 +112,16 @@ class SerializerTest {
         op.setNum(4543);
         op.setStr("fs");
 
-        System.out.println(serializer.writeToString(op));
+        String str = serializer.writeToString(op);
+        System.out.println(str);
+
+        OnlyPrimitives des = serializer.readFromString(OnlyPrimitives.class, str);
+
+        String str2 = serializer.writeToString(des);
+        System.out.println(str2);
+
+        assertEquals(str, str2);
+
     }
 
     @Test
@@ -131,8 +140,18 @@ class SerializerTest {
                 )
         );
 
+        OnlyPrimitives op1 = new OnlyPrimitives();
+        op1.setStr("st1");
+        op1.setNum(123);
+        OnlyPrimitives op2 = new OnlyPrimitives();
 
-        System.out.println(serializer.writeToString(ar));
+
+        ar.setOpSet(new HashSet<>(
+                Set.of(op1, op2)
+        ));
+
+
+
     }
 
     @Test
@@ -152,7 +171,10 @@ class SerializerTest {
         in.setArra(arr);
         in.setOps(op);
 
-        System.out.println(serializer.writeToString(in));
+
+        String str = serializer.writeToString(in);
+        System.out.println(str);
+        serializer.readFromString(ObjectsIn.class, str);
     }
 }
 
@@ -356,6 +378,12 @@ class Arrays {
 
     private List<Integer> list;
     private Set<String> set;
+
+    public void setOpSet(Set<OnlyPrimitives> opSet) {
+        this.opSet = opSet;
+    }
+
+    private Set<OnlyPrimitives> opSet;
 
     public void setList(List<Integer> list) {
         this.list = list;

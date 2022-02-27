@@ -7,7 +7,6 @@ import mapper.annotations.PropertyName;
 import mapper.enums.NullHandling;
 import mapper.exceptions.ExportMapperException;
 import mapper.interfaces.Mapper;
-import mapper.utils.Pair;
 import mapper.utils.TypeConverter;
 
 import java.io.*;
@@ -45,90 +44,100 @@ public class Serializer implements Mapper {
             return null;
         }
 
-        private Map<String, String> parseObject(String str) {
-            Map<String, String> elements = new HashMap<>();
+        private Object parseObject(Class<?> clazz, String str) {
             StringBuilder sb = new StringBuilder(str);
+            Object obj = createObject(clazz);
 
-            int i = 0;
-            while (i < sb.length()) {
-                if (sb.charAt(i) == '\"') {
-                    // Getting key.
-                    int keyEnd = sb.indexOf("\"", i + 1);
-                    String key = sb.substring(i + 1, keyEnd);
-
-                    // Getting value.
-                    int valueEnd;
-                    if (sb.charAt(keyEnd + 2) == '[') {
-                        int opened = 1;
-                        i = keyEnd + 2;
-                        while (opened != 0) {
-                            ++i;
-                            if (sb.charAt(i) == ']') {
-                                opened--;
-                            } else if (sb.charAt(i) == '[') {
-                                opened++;
-                            }
-                        }
-
-                        valueEnd = i + 1;
-                        String array = sb.substring(keyEnd + 2, valueEnd);
-                        elements.put(key, array);
-                        i = valueEnd;
-                    } else if (sb.charAt(keyEnd + 2) == '\"') {
-                        valueEnd = sb.indexOf("\"", keyEnd + 3);
-                        String value = sb.substring(keyEnd + 3, valueEnd);
-                        elements.put(key, value);
-                        i = valueEnd + 1;
+            Map<String, Field> fields = new HashMap<>();
+            for (Field field : clazz.getDeclaredFields()) {
+                if (!field.isSynthetic() && !Modifier.isStatic(field.getModifiers())
+                        && !field.isAnnotationPresent(Ignored.class)) {
+                    if (field.isAnnotationPresent(PropertyName.class)) {
+                        fields.put(field.getAnnotation(PropertyName.class).value(), field);
+                    } else {
+                        fields.put(field.getName(), field);
                     }
-                } else {
-                    i++;
                 }
             }
 
-            System.out.println(elements);
-            return elements;
+            try {
+                int i = 1;
+                while (i < sb.length()) {
+                    int keyStart = str.indexOf("\"", i) + 1;
+                    int keyEnd = str.indexOf("#", keyStart);
+                    String key = str.substring(keyStart, keyEnd);
+                    System.out.println(key);
+
+                    int typeEnd = str.indexOf("\"", keyEnd);
+                    String typeStr = str.substring(keyEnd + 1, typeEnd);
+                    System.out.println(typeStr);
+
+                    int valueEnd = str.indexOf("\"", typeEnd + 3);
+                    String value = str.substring(typeEnd + 3, valueEnd);
+                    System.out.println(value);
+
+                    Field field = fields.get(key);
+
+                    if (field.trySetAccessible()) {
+                        Class<?> fieldType = field.getType();
+
+                        if (converter.isPrimitiveOrWrapper(fieldType)) {
+                            field.set(obj, converter.convertToPrimitiveOrWrapper(value, fieldType));
+                        } else {
+                            Class<?> type = Class.forName(typeStr);
+                        }
+
+                    }
+                    i = valueEnd + 2;
+
+                }
+            } catch (ClassNotFoundException | IllegalAccessException e) {
+                throw new ExportMapperException(e.getMessage());
+            }
+
+            return obj;
         }
     }
 
     @Override
     public <T> T readFromString(Class<T> clazz, String input) {
         checkClassExportation(clazz);
-        Map<String, Field> fields = new HashMap<>();
-        for (Field field : clazz.getDeclaredFields()) {
-            if (!field.isSynthetic() && !Modifier.isStatic(field.getModifiers())
-                    && !field.isAnnotationPresent(Ignored.class)) {
-                if (field.isAnnotationPresent(PropertyName.class)) {
-                    fields.put(field.getAnnotation(PropertyName.class).value(), field);
-                } else {
-                    fields.put(field.getName(), field);
-                }
-            }
-        }
+//        Map<String, Field> fields = new HashMap<>();
+//        for (Field field : clazz.getDeclaredFields()) {
+//            if (!field.isSynthetic() && !Modifier.isStatic(field.getModifiers())
+//                    && !field.isAnnotationPresent(Ignored.class)) {
+//                if (field.isAnnotationPresent(PropertyName.class)) {
+//                    fields.put(field.getAnnotation(PropertyName.class).value(), field);
+//                } else {
+//                    fields.put(field.getName(), field);
+//                }
+//            }
+//        }
+//
+//        Object obj = createObject(clazz);
+//        Map<String, String> elements = reader.parseObject(input);
 
-        Object obj = createObject(clazz);
-        Map<String, String> elements = reader.parseObject(input);
-
-        try {
-            for (String elementName :
-                    elements.keySet()) {
-                Field field = fields.get(elementName);
-
-                if (field.trySetAccessible()) {
-                    Class<?> fieldType = field.getType();
-                    if (converter.isPrimitiveOrWrapper(fieldType)) {
-                        field.set(obj, converter.convertToPrimitiveOrWrapper(elements.get(elementName), fieldType));
-                    }
-                    if (converter.isListOrSet(fieldType)) {
-                        field.set(obj, reader.parseCollection(elements.get(elementName), field));
-                    }
-                }
-            }
-        } catch (IllegalAccessException e) {
-            throw new ExportMapperException("Can't get access to field\n\r" + e.getMessage());
-        }
+//        try {
+//            for (String elementName :
+//                    elements.keySet()) {
+//                Field field = fields.get(elementName);
+//
+//                if (field.trySetAccessible()) {
+//                    Class<?> fieldType = field.getType();
+//                    if (converter.isPrimitiveOrWrapper(fieldType)) {
+//                        field.set(obj, converter.convertToPrimitiveOrWrapper(elements.get(elementName), fieldType));
+//                    }
+//                    if (converter.isListOrSet(fieldType)) {
+//                        field.set(obj, reader.parseCollection(elements.get(elementName), field));
+//                    }
+//                }
+//            }
+//        } catch (IllegalAccessException e) {
+//            throw new ExportMapperException("Can't get access to field\n\r" + e.getMessage());
+//        }
 
 
-        return clazz.cast(obj);
+        return clazz.cast(reader.parseObject(clazz, input));
     }
 
     @Override
@@ -228,7 +237,7 @@ public class Serializer implements Mapper {
         // TODO: objects
 
 
-        private String serializeObject(Object obj) throws IllegalAccessException {
+        private String serializeObject(Object obj) {
             Class<?> clazz = obj.getClass();
             StringBuilder sb = new StringBuilder();
             Set<String> fieldNames = getFieldNames(clazz);
@@ -243,49 +252,54 @@ public class Serializer implements Mapper {
                     String dtFormat = field.isAnnotationPresent(DateFormat.class) ?
                             field.getAnnotation(DateFormat.class).value() : null;
 
-                    if (converter.isPrimitiveOrWrapper(field.getType())) {
-                        String type = field.getType().getName();
+                    try {
+                        if (converter.isPrimitiveOrWrapper(field.getType())) {
+                            String type = field.getType().getName();
 
-                        // Key + type.
-                        sb.append('\"');
-                        sb.append(getPropertyName(field, fieldNames))
-                                .append('#').append(type);
-                        sb.append('\"');
+                            // Key + type.
+                            sb.append('\"');
+                            sb.append(getPropertyName(field, fieldNames))
+                                    .append('#').append(type);
+                            sb.append('\"');
 
-                        // Value.
-                        sb.append(":\"");
-                        sb.append(field.get(obj));
-                    } else if (converter.isListOrSet(field.getType())) {
+                            // Value.
+                            sb.append(":\"");
+                            sb.append(field.get(obj));
+                            sb.append("\"");
+                        } else if (converter.isListOrSet(field.getType())) {
 //                        Object instance = createObject(field.getClass());
 //                        System.out.println(instance.getClass());
-                        String realType = field.get(obj).getClass().getName();
-                        String abstractType = field.getGenericType().getTypeName();
+                            String realType = field.get(obj).getClass().getName();
+                            String abstractType = field.getGenericType().getTypeName();
 //                        System.out.println(realType);
 //                        System.out.println(field.get(obj).getClass());
 
 
-                        // Key + type.
-                        sb.append('\"');
-                        sb.append(getPropertyName(field, fieldNames))
-                                .append('#').append(realType)
-                                .append('#').append(abstractType);
-                        sb.append("\":");
+                            // Key + type.
+                            sb.append('\"');
+                            sb.append(getPropertyName(field, fieldNames))
+                                    .append('#').append(realType)
+                                    .append('#').append(abstractType);
+                            sb.append("\":");
 
-                        // Value.
-                        sb.append(serializeArray((Collection<?>) field.get(obj)));
-                    } else {
-                        String type = field.getType().getName();
+                            // Value.
+                            sb.append(serializeArray((Collection<?>) field.get(obj)));
+                        } else {
+                            String type = field.getType().getName();
 
-                        // Key + type.
-                        sb.append('\"');
-                        sb.append(getPropertyName(field, fieldNames))
-                                .append('#').append(type);
-                        sb.append("\":");
+                            // Key + type.
+                            sb.append('\"');
+                            sb.append(getPropertyName(field, fieldNames))
+                                    .append('#').append(type);
+                            sb.append("\":");
 
-                        // Value.
-                        sb.append("obj");
+                            // Value.
+                            sb.append(serializeObject(field.get(obj)));
+                        }
+                        sb.append(',');
+                    } catch (IllegalAccessException e) {
+                        throw new ExportMapperException("Can't get access to field | " + e.getMessage());
                     }
-                    sb.append(',');
                 }
             }
 
@@ -311,10 +325,12 @@ public class Serializer implements Mapper {
                 return sb.toString();
             }
 
-
-
             for (Object obj : array) {
                 Class<?> clazz = obj.getClass();
+                if (!isSerializableType(clazz)) {
+                    throw new ExportMapperException("Type " + clazz.getSimpleName() + " is not exportable");
+                }
+
                 if (converter.isPrimitiveOrWrapper(clazz)) {
                     String type = clazz.getName();
 
@@ -338,25 +354,18 @@ public class Serializer implements Mapper {
                     // Value.
                     sb.append(serializeArray((Collection<?>) obj));
                 } else {
-//                    String type;
-//                    if (field.getType().toString().contains("class")) {
-//                        type = field.getType().toString().substring(6);
-//                    } else {
-//                        type = field.getType().toString();
-//                    }
-//
-//                    // Key + type.
-//                    sb.append('\"');
-//                    sb.append(getPropertyName(field, fieldNames))
-//                            .append('#').append(type);
-//                    sb.append("\":");
-//
-//                    // Value.
-//                    sb.append("obj");
+                    String type = clazz.getName();
+
+                    // Key + type.
+                    sb.append('\"');
+                    sb.append(type);
+                    sb.append("\":");
+
+                    // Value.
+                    sb.append(serializeObject(obj));
                 }
                 sb.append(',');
             }
-
 
             int index;
             if ((index = sb.lastIndexOf(",")) != -1) {
@@ -369,11 +378,7 @@ public class Serializer implements Mapper {
 
 
         private String serializeToJson(Object obj) {
-            try {
-                return serializeObject(obj);
-            } catch (IllegalAccessException e) {
-                throw new ExportMapperException("Can't get access to field\n\r" + e.getMessage());
-            }
+            return serializeObject(obj);
         }
     }
 
