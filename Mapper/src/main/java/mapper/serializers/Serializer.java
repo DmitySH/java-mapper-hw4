@@ -29,23 +29,12 @@ public class Serializer implements Mapper {
     }
 
     class JsonReader {
-
-
-        private Collection<?> parseCollection(String value, Field field) {
-            StringBuilder sb = new StringBuilder(value);
-            System.out.println(field.getGenericType());
-
-
-            int i = 0;
-            while (i < sb.length()) {
-
-            }
-
-            return null;
-        }
-
         private Object parseObject(Class<?> clazz, String str) {
             StringBuilder sb = new StringBuilder(str);
+            if (!isSerializableType(clazz)) {
+                throw new ExportMapperException("Type " + clazz.getSimpleName() + " is not exportable");
+            }
+
             Object obj = createObject(clazz);
 
             Map<String, Field> fields = new HashMap<>();
@@ -62,40 +51,157 @@ public class Serializer implements Mapper {
 
             try {
                 int i = 1;
+                if (sb.length() == 2) {
+                    return obj;
+                }
+
                 while (i < sb.length()) {
                     int keyStart = str.indexOf("\"", i) + 1;
                     int keyEnd = str.indexOf("#", keyStart);
                     String key = str.substring(keyStart, keyEnd);
-                    System.out.println(key);
 
-                    int typeEnd = str.indexOf("\"", keyEnd);
-                    String typeStr = str.substring(keyEnd + 1, typeEnd);
-                    System.out.println(typeStr);
-
-                    int valueEnd = str.indexOf("\"", typeEnd + 3);
-                    String value = str.substring(typeEnd + 3, valueEnd);
-                    System.out.println(value);
-
+                    int valueEnd;
                     Field field = fields.get(key);
 
                     if (field.trySetAccessible()) {
                         Class<?> fieldType = field.getType();
 
                         if (converter.isPrimitiveOrWrapper(fieldType)) {
+                            int typeEnd = str.indexOf("\"", keyEnd);
+                            String typeStr = str.substring(keyEnd + 1, typeEnd);
+//                            System.out.println(typeStr);
+
+                            valueEnd = str.indexOf("\"", typeEnd + 3);
+                            String value = str.substring(typeEnd + 3, valueEnd);
+//                            System.out.println(value);
+
                             field.set(obj, converter.convertToPrimitiveOrWrapper(value, fieldType));
+                            i = valueEnd + 2;
+                        } else if (converter.isListOrSet(fieldType)) {
+                            int typeEnd = str.indexOf("\"", keyEnd);
+                            String[] typeStr = str.substring(keyEnd + 1, typeEnd).split("#");
+
+                            int opened = 1;
+                            int pos = typeEnd + 3;
+                            while (opened != 0) {
+                                if (sb.charAt(pos) == '[') {
+                                    ++opened;
+                                } else if (sb.charAt(pos) == ']') {
+                                    --opened;
+                                }
+                                ++pos;
+                            }
+
+                            String value = str.substring(typeEnd + 2, pos);
+//                            System.out.println(value);
+
+                            Class<?> type = Class.forName(typeStr[0]);
+
+                            field.set(obj, parseCollection(type,
+                                    value));
+                            i = pos + 1;
                         } else {
+                            int typeEnd = str.indexOf("\"", keyEnd);
+                            String typeStr = str.substring(keyEnd + 1, typeEnd);
+//                            System.out.println(typeStr);
+
+                            int opened = 1;
+                            int pos = typeEnd + 3;
+                            while (opened != 0) {
+                                if (sb.charAt(pos) == '{') {
+                                    ++opened;
+                                } else if (sb.charAt(pos) == '}') {
+                                    --opened;
+                                }
+                                ++pos;
+                            }
+                            String value = str.substring(typeEnd + 2, pos);
+
+//                            System.out.println(value);
+
                             Class<?> type = Class.forName(typeStr);
+
+                            field.set(obj, parseObject(type,
+                                    value));
+                            i = pos + 1;
                         }
-
                     }
-                    i = valueEnd + 2;
-
                 }
             } catch (ClassNotFoundException | IllegalAccessException e) {
                 throw new ExportMapperException(e.getMessage());
             }
 
             return obj;
+        }
+
+        private Collection<Object> parseCollection(Class<?> collectionType, String str) throws ClassNotFoundException {
+
+            if (!isSerializableType(collectionType)) {
+                throw new ExportMapperException("Type " + collectionType.getSimpleName() + " is not exportable");
+            }
+
+            Collection<Object> collection = (Collection<Object>) createObject(collectionType);
+            StringBuilder sb = new StringBuilder(str);
+
+            int i = 1;
+            if (sb.length() == 2) {
+                return collection;
+            }
+
+            while (i < sb.length()) {
+                int innerTypeBegin = sb.indexOf("\"", i) + 1;
+                int innerTypeEnd = sb.indexOf("\"", innerTypeBegin);
+
+                String innerType = sb.substring(innerTypeBegin, innerTypeEnd);
+
+                Class<?> innerClass = Class.forName(innerType);
+
+
+                if (converter.isPrimitiveOrWrapper(innerClass)) {
+                    int valueEnd = sb.indexOf("\"", innerTypeEnd + 3);
+                    String value = sb.substring(innerTypeEnd + 3, valueEnd);
+                    collection.add(converter.convertToPrimitiveOrWrapper(value, innerClass));
+
+                    i = valueEnd + 2;
+                } else if (converter.isListOrSet(innerClass)) {
+                    int opened = 1;
+                    int pos = innerTypeEnd + 3;
+                    while (opened != 0) {
+                        if (sb.charAt(pos) == '[') {
+                            ++opened;
+                        } else if (sb.charAt(pos) == ']') {
+                            --opened;
+                        }
+                        ++pos;
+                    }
+
+                    String col = sb.substring(innerTypeEnd + 2, pos);
+                    Object value = parseCollection(innerClass, col);
+                    System.out.println(value);
+                    collection.add(value);
+                    i = pos + 1;
+                } else {
+                    int opened = 1;
+                    int pos = innerTypeEnd + 3;
+
+                    while (opened != 0) {
+                        if (sb.charAt(pos) == '{') {
+                            ++opened;
+                        } else if (sb.charAt(pos) == '}') {
+                            --opened;
+                        }
+                        ++pos;
+                    }
+
+                    String obj = sb.substring(innerTypeEnd + 2, pos);
+                    Object value = parseObject(innerClass, obj);
+                    collection.add(value);
+                    i = pos + 1;
+                }
+            }
+
+
+            return collection;
         }
     }
 
@@ -193,45 +299,6 @@ public class Serializer implements Mapper {
 //
 //            return "{" + jsonString + "}";
 //        }
-
-        private String getFieldJson(Object obj, String dtFormat) {
-            Class<?> clazz = obj.getClass();
-            if (!isSerializableType(clazz)) {
-                throw new ExportMapperException("Type " + clazz.getSimpleName() +
-                        "can't be serialized with mapper");
-            }
-
-            if (clazz.isAnnotationPresent(Exported.class)) {
-                return writeToString(obj);
-            } else if (converter.isListOrSet(clazz)) {
-                return arrayToJson((Collection<?>) obj);
-            } else if (converter.isPrimitiveOrWrapper(clazz) || clazz.isEnum()) {
-                return primitiveOrEnumToJson(obj);
-            } else if (converter.isDateTime(clazz)) {
-                return dateTimeToJson(obj, dtFormat);
-            } else {
-                return String.valueOf(obj);
-            }
-        }
-
-        private String arrayToJson(Collection<?> collection) {
-            String jsonString = collection.stream().map(elem -> getFieldJson(elem, null))
-                    .collect(Collectors.joining(","));
-            return "[" + jsonString + "]";
-        }
-
-        private String primitiveOrEnumToJson(Object primitive) {
-            return "\"" + primitive + "\"";
-        }
-
-        private String dateTimeToJson(Object obj, String dtFormat) {
-            if (dtFormat != null) {
-                DateTimeFormatter formatter = DateTimeFormatter.ofPattern(dtFormat);
-                return "\"" + formatter.format((TemporalAccessor) obj) + "\"";
-            } else {
-                return "\"" + obj + "\"";
-            }
-        }
 
 
         // TODO: objects

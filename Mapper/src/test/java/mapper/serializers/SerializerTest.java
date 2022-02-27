@@ -130,6 +130,7 @@ class SerializerTest {
 
 
         ar.setList(new ArrayList<>(List.of(1, 2, 3)));
+        ar.setSet(new TreeSet<>(List.of("ku", "ka", "re", "ku")));
         ar.setSet(new TreeSet<>(List.of("fsd", "f2222")));
         ar.setInnerList(
                 new LinkedList<>(
@@ -146,12 +147,16 @@ class SerializerTest {
         OnlyPrimitives op2 = new OnlyPrimitives();
 
 
-        ar.setOpSet(new HashSet<>(
-                Set.of(op1, op2)
+        ar.setOpList(new LinkedList<>(
+                List.of(op2, op1)
         ));
 
+        String str = serializer.writeToString(ar);
+        System.out.println(str);
 
-
+        String str2 = serializer.writeToString(serializer.readFromString(Arrays.class, str));
+        System.out.println(str2);
+        assertEquals(str, str2);
     }
 
     @Test
@@ -162,19 +167,77 @@ class SerializerTest {
         op.setNum(4543);
         op.setStr("fs");
 
-        Arrays arr = new Arrays();
+        Arrays ar = new Arrays();
 
-        arr.setList(new ArrayList<>(List.of(1, 2, 3)));
-        arr.setSet(new TreeSet<>(List.of("fsd", "f2222")));
+
+        Arrays innerAr = new Arrays();
+
+        op.setArInAr(innerAr);
+
+        ar.setList(new ArrayList<>(List.of(1, 2, 3)));
+        ar.setSet(new TreeSet<>(List.of("ku", "ka", "re", "ku")));
+        ar.setSet(new TreeSet<>(List.of("fsd", "f2222")));
+        ar.setInnerList(
+                new LinkedList<>(
+                        List.of(
+                                new HashSet<>(List.of(1, 2, 3)),
+                                new TreeSet<>(List.of(5, 1))
+                        )
+                )
+        );
+
+        ar.setOp(op);
+
+
+
+        ar.setTripleList(
+                new LinkedList<>(
+                        List.of(
+                                new HashSet<>(List.of(
+                                        new LinkedList<>(List.of(123, 321)),
+                                        new ArrayList<>(List.of(3433, 0))
+                                )),
+                                new HashSet<>(List.of(
+                                        new LinkedList<>(List.of(12333, 32331)),
+                                        new ArrayList<>(List.of(-111))
+                                ))
+                        )
+                )
+        );
+
+        OnlyPrimitives op1 = new OnlyPrimitives();
+        op1.setStr("st1");
+        op1.setNum(123);
+        OnlyPrimitives op2 = new OnlyPrimitives();
+
+
+        ar.setOpList(new LinkedList<>(
+                List.of(op2, op1)
+        ));
 
         ObjectsIn in = new ObjectsIn();
-        in.setArra(arr);
+        in.setArra(ar);
         in.setOps(op);
 
 
+        Arrays arToColOne = new Arrays();
+
+        OnlyPrimitives innerOp = new OnlyPrimitives();
+        innerOp.setNum(123);
+
+
+        arToColOne.setOp(innerOp);
+        in.setLotOfArr(
+                new LinkedList<>(List.of(arToColOne, new Arrays()))
+        );
+
+        in.setEmpty(new HashSet<>());
+
         String str = serializer.writeToString(in);
         System.out.println(str);
-        serializer.readFromString(ObjectsIn.class, str);
+        String str2 = serializer.writeToString(serializer.readFromString(ObjectsIn.class, str));
+        System.out.println(str2);
+        assertEquals(str, str2);
     }
 }
 
@@ -350,6 +413,11 @@ class OnlyPrimitives {
     public OnlyPrimitives() {
 
     }
+    Arrays arInAr;
+
+    public void setArInAr(Arrays arInAr) {
+        this.arInAr = arInAr;
+    }
 
     @PropertyName("chislo")
     private Integer integer;
@@ -379,11 +447,19 @@ class Arrays {
     private List<Integer> list;
     private Set<String> set;
 
-    public void setOpSet(Set<OnlyPrimitives> opSet) {
-        this.opSet = opSet;
+    OnlyPrimitives op;
+
+    public void setOp(OnlyPrimitives op) {
+        this.op = op;
     }
 
-    private Set<OnlyPrimitives> opSet;
+
+
+    public void setOpList(List<OnlyPrimitives> opList) {
+        this.opList = opList;
+    }
+
+    private List<OnlyPrimitives> opList;
 
     public void setList(List<Integer> list) {
         this.list = list;
@@ -394,6 +470,13 @@ class Arrays {
     }
 
     private List<Set<Integer>> innerList;
+
+    public void setTripleList(List<Set<List<Integer>>> tripleList) {
+        this.tripleList = tripleList;
+    }
+
+    private List<Set<List<Integer>>> tripleList;
+
 
     public void setInnerList(List<Set<Integer>> innerList) {
         this.innerList = innerList;
@@ -415,4 +498,16 @@ class ObjectsIn {
     public void setOps(OnlyPrimitives ops) {
         this.ops = ops;
     }
+
+    public void setLotOfArr(List<Arrays> lotOfArr) {
+        this.lotOfArr = lotOfArr;
+    }
+
+    public void setEmpty(HashSet<Integer> empty) {
+        this.empty = empty;
+    }
+
+    HashSet<Integer> empty;
+
+    List<Arrays> lotOfArr;
 }
