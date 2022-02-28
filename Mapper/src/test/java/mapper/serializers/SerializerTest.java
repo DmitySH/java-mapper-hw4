@@ -171,7 +171,6 @@ class SerializerTest {
         ar.setOp(op);
 
 
-
         ar.setTripleList(
                 new LinkedList<>(
                         List.of(
@@ -252,12 +251,24 @@ class SerializerTest {
         helper.setCycle(cycle);
         cycle.setHelper(helper);
 
-        assertThrows(ExportMapperException.class, ()->serializer.writeToString(cycle));
+        assertThrows(ExportMapperException.class, () -> serializer.writeToString(cycle));
 
         PrimitiveCycle primitiveCycle = new PrimitiveCycle();
         primitiveCycle.setCycle(primitiveCycle);
 
-        assertThrows(ExportMapperException.class, ()->serializer.writeToString(primitiveCycle));
+        assertThrows(ExportMapperException.class, () -> serializer.writeToString(primitiveCycle));
+    }
+
+    @Test
+    void testBadStrings() {
+        BadStringsClass bs = new BadStringsClass();
+
+        bs.setS1("\"");
+        bs.setS2("[\"fdsfaf\"]");
+        bs.setS3("{{fdsf\"\"\\\"[}}] /\"");
+        String str = serializer.writeToString(bs);
+        String str2 = serializer.writeToString(serializer.readFromString(BadStringsClass.class, str));
+        assertEquals(str, str2);
     }
 }
 
@@ -287,6 +298,41 @@ class SubClass extends Base {
 @Exported
 class EmptyClass {
     public EmptyClass() {
+    }
+}
+
+
+@Exported
+class BadStringsClass {
+    public BadStringsClass() {
+    }
+
+    private String s1;
+    private String s2;
+    private String s3;
+
+    public void setS1(String s1) {
+        this.s1 = s1;
+    }
+
+    public void setS2(String s2) {
+        this.s2 = s2;
+    }
+
+    public void setS3(String s3) {
+        this.s3 = s3;
+    }
+
+    public String getS1() {
+        return s1;
+    }
+
+    public String getS2() {
+        return s2;
+    }
+
+    public String getS3() {
+        return s3;
     }
 }
 
@@ -323,7 +369,7 @@ class SameNameClass {
 
 
 @Exported
-class CycleClass{
+class CycleClass {
     public CycleClass() {
     }
 
@@ -335,7 +381,7 @@ class CycleClass{
 }
 
 @Exported
-class CycleClassHelper{
+class CycleClassHelper {
     public CycleClassHelper() {
     }
 
@@ -347,7 +393,7 @@ class CycleClassHelper{
 }
 
 @Exported
-class PrimitiveCycle{
+class PrimitiveCycle {
     public PrimitiveCycle() {
     }
 
@@ -413,6 +459,7 @@ class OnlyPrimitives {
     public OnlyPrimitives() {
 
     }
+
     Arrays arInAr;
 
     public void setArInAr(Arrays arInAr) {
@@ -459,7 +506,6 @@ class Arrays {
     public void setOp(OnlyPrimitives op) {
         this.op = op;
     }
-
 
 
     public void setOpList(List<OnlyPrimitives> opList) {

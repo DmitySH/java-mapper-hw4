@@ -6,7 +6,9 @@ import mapper.annotations.Ignored;
 import mapper.annotations.PropertyName;
 import mapper.enums.NullHandling;
 import mapper.exceptions.ExportMapperException;
+import mapper.interfaces.Cleaner;
 import mapper.interfaces.Mapper;
+import mapper.utils.StringCleaner;
 import mapper.utils.TypeConverter;
 
 import java.io.*;
@@ -23,12 +25,15 @@ public class Serializer implements Mapper {
     private final TypeConverter converter;
     private final JsonWriter writer;
     private final JsonReader reader;
+    private final Cleaner stringCleaner;
+
     private Set<Object> colors;
 
     public Serializer() {
         converter = new TypeConverter();
         writer = new JsonWriter();
         reader = new JsonReader();
+        stringCleaner = new StringCleaner();
     }
 
     class JsonReader {
@@ -77,6 +82,10 @@ public class Serializer implements Mapper {
                             valueEnd = str.indexOf("\"", typeEnd + 3);
                             String value = str.substring(typeEnd + 3, valueEnd);
 //                            System.out.println(value);
+
+                            if (field.getType().equals(String.class)) {
+                                value = stringCleaner.recoverString(value);
+                            }
 
                             field.set(obj, converter.convertToPrimitiveOrWrapper(value, fieldType));
                             i = valueEnd + 2;
@@ -210,6 +219,9 @@ public class Serializer implements Mapper {
                 if (converter.isPrimitiveOrWrapper(innerClass)) {
                     int valueEnd = sb.indexOf("\"", innerTypeEnd + 3);
                     String value = sb.substring(innerTypeEnd + 3, valueEnd);
+                    if (innerClass.equals(String.class)) {
+                        value = stringCleaner.recoverString(value);
+                    }
                     collection.add(converter.convertToPrimitiveOrWrapper(value, innerClass));
 
                     i = valueEnd + 2;
@@ -317,7 +329,11 @@ public class Serializer implements Mapper {
 
                             // Value.
                             sb.append(":\"");
-                            sb.append(field.get(obj));
+                            String value = String.valueOf(field.get(obj));
+                            if (field.getType().equals(String.class)) {
+                                value = stringCleaner.cleanString(value);
+                            }
+                            sb.append(value);
                             sb.append("\"");
                         } else if (converter.isDateTime(field.getType())) {
                             String type = field.getType().getName();
@@ -413,7 +429,12 @@ public class Serializer implements Mapper {
 
                     // Value.
                     sb.append(":\"");
-                    sb.append(obj);
+
+                    String value = String.valueOf(obj);
+                    if (clazz.equals(String.class)) {
+                        value = stringCleaner.cleanString(value);
+                    }
+                    sb.append(value);
                     sb.append("\"");
                 } else if (converter.isListOrSet(clazz)) {
                     String type = clazz.getName();
