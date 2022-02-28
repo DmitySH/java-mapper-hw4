@@ -63,7 +63,7 @@ class SerializerTest {
     }
 
     @Test
-    void writeToString() {
+    void testChecks() {
         assertThrows(ExportMapperException.class,
                 () -> serializer.writeToString(null));
         assertThrows(ExportMapperException.class,
@@ -270,6 +270,38 @@ class SerializerTest {
         String str2 = serializer.writeToString(serializer.readFromString(BadStringsClass.class, str));
         assertEquals(str, str2);
     }
+
+    @Test
+    void testNulls() {
+        IncludeNullClass include = new IncludeNullClass();
+        ExcludeNullClass exclude = new ExcludeNullClass();
+
+        include.setInteger(null);
+        include.setByt((byte) 12);
+        include.setCls(null);
+
+        exclude.setInteger(null);
+        exclude.setByt((byte) 33);
+        exclude.setCls(include);
+
+        include.setList(null);
+        include.setlTime(null);
+        include.setListInt(
+                new ArrayList<>(
+                        List.of(
+                                123, 43
+                        )
+                )
+        );
+
+        include.getListInt().add(null);
+
+        String str = serializer.writeToString(exclude);
+
+        System.out.println(str);
+
+
+    }
 }
 
 
@@ -393,6 +425,32 @@ class CycleClassHelper {
 }
 
 @Exported
+class CycleCollection {
+    public CycleCollection() {
+    }
+
+    private List<List<Integer>> one;
+    private List<List<Integer>> two;
+
+
+    public List<List<Integer>> getOne() {
+        return one;
+    }
+
+    public void setOne(List<List<Integer>> one) {
+        this.one = one;
+    }
+
+    public List<List<Integer>> getTwo() {
+        return two;
+    }
+
+    public void setTwo(List<List<Integer>> two) {
+        this.two = two;
+    }
+}
+
+@Exported
 class PrimitiveCycle {
     public PrimitiveCycle() {
     }
@@ -443,7 +501,25 @@ class ExcludeNullClass {
     public ExcludeNullClass() {
     }
 
-    private final Integer integer = null;
+    IncludeNullClass cls;
+
+    private byte byt;
+
+    public void setCls(IncludeNullClass cls) {
+        this.cls = cls;
+    }
+
+    public void setByt(byte byt) {
+        this.byt = byt;
+    }
+
+    public void setInteger(Integer integer) {
+        this.integer = integer;
+    }
+
+    private Integer integer;
+
+
 }
 
 @Exported(nullHandling = NullHandling.INCLUDE)
@@ -451,7 +527,44 @@ class IncludeNullClass {
     public IncludeNullClass() {
     }
 
-    private final Integer integer = null;
+    public void setCls(IncludeNullClass cls) {
+        this.cls = cls;
+    }
+
+    public void setByt(byte byt) {
+        this.byt = byt;
+    }
+
+    public void setInteger(Integer integer) {
+        this.integer = integer;
+    }
+
+    IncludeNullClass cls;
+
+    private byte byt;
+    private Integer integer;
+
+    private LocalTime lTime;
+
+    private List<Object> list;
+
+    public void setlTime(LocalTime lTime) {
+        this.lTime = lTime;
+    }
+
+    public void setList(List<Object> list) {
+        this.list = list;
+    }
+
+    public void setListInt(List<Integer> listInt) {
+        this.listInt = listInt;
+    }
+
+    private List<Integer> listInt;
+
+    public List<Integer> getListInt() {
+        return listInt;
+    }
 }
 
 @Exported

@@ -300,7 +300,7 @@ public class Serializer implements Mapper {
             strObject = reader.readLine();
         }
 
-        return clazz.cast(reader.parseObject(clazz,strObject));
+        return clazz.cast(reader.parseObject(clazz, strObject));
     }
 
     class JsonWriter {
@@ -341,11 +341,16 @@ public class Serializer implements Mapper {
                                     field.getAnnotation(DateFormat.class).value() : null;
 
                             String res;
-                            if (dtFormat != null) {
-                                DateTimeFormatter timeColonFormatter = DateTimeFormatter.ofPattern(dtFormat);
-                                res = timeColonFormatter.format((TemporalAccessor) field.get(obj));
+                            Object objValue = field.get(obj);
+                            if (objValue == null) {
+                                res = "null";
                             } else {
-                                res = field.get(obj).toString();
+                                if (dtFormat != null) {
+                                    DateTimeFormatter timeColonFormatter = DateTimeFormatter.ofPattern(dtFormat);
+                                    res = timeColonFormatter.format((TemporalAccessor) objValue);
+                                } else {
+                                    res = objValue.toString();
+                                }
                             }
 
                             // Key + type.
@@ -358,10 +363,19 @@ public class Serializer implements Mapper {
                             sb.append(":\"");
                             sb.append(res);
                             sb.append("\"");
-
                         } else if (converter.isListOrSet(field.getType())) {
-                            String realType = field.get(obj).getClass().getName();
-                            String abstractType = field.getGenericType().getTypeName();
+                            Object objValue = field.get(obj);
+                            String realType;
+                            String abstractType;
+                            if (objValue != null) {
+                                realType = objValue.getClass().getName();
+                                abstractType = field.getGenericType().getTypeName();
+                            }
+                            else {
+                                realType = "null";
+                                abstractType = "null";
+                            }
+
 
                             // Key + type.
                             sb.append('\"');
@@ -371,7 +385,11 @@ public class Serializer implements Mapper {
                             sb.append("\":");
 
                             // Value.
-                            sb.append(serializeArray((Collection<?>) field.get(obj)));
+                            if (objValue == null) {
+                                sb.append("\"null\"");
+                            } else {
+                                sb.append(serializeArray((Collection<?>) objValue));
+                            }
                         } else {
                             String type = field.getType().getName();
 
@@ -382,7 +400,12 @@ public class Serializer implements Mapper {
                             sb.append("\":");
 
                             // Value.
-                            sb.append(serializeObject(field.get(obj)));
+                            Object objValue = field.get(obj);
+                            if (objValue == null) {
+                                sb.append("\"null\"");
+                            } else {
+                                sb.append(serializeObject(objValue));
+                            }
                         }
                         sb.append(',');
                     } catch (IllegalAccessException e) {
@@ -404,6 +427,8 @@ public class Serializer implements Mapper {
 
 
         private String serializeArray(Collection<?> array) {
+            checkForCycles(array);
+
             StringBuilder sb = new StringBuilder();
 
             sb.append('[');
@@ -414,6 +439,16 @@ public class Serializer implements Mapper {
             }
 
             for (Object obj : array) {
+                if (obj == null) {
+                    sb.append('\"');
+                    sb.append("null");
+                    sb.append('\"');
+                    sb.append(":\"");
+                    sb.append("null");
+                    sb.append("\"");
+                    sb.append(',');
+                    continue;
+                }
                 Class<?> clazz = obj.getClass();
                 if (isNotSerializableType(clazz)) {
                     throw new ExportMapperException("Type " + clazz.getSimpleName() + " is not exportable");
@@ -465,11 +500,13 @@ public class Serializer implements Mapper {
                 sb.deleteCharAt(index);
             }
             sb.append(']');
+            colors.remove(array);
 
             return sb.toString();
         }
     }
 
+    
     @Override
     public String writeToString(Object object) {
         try {
