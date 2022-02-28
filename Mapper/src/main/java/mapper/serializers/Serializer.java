@@ -27,7 +27,7 @@ public class Serializer implements Mapper {
     private final JsonReader reader;
     private final Cleaner stringCleaner;
 
-    private Set<Object> colors;
+    private List<Object> colors;
 
     public Serializer() {
         converter = new TypeConverter();
@@ -506,12 +506,12 @@ public class Serializer implements Mapper {
         }
     }
 
-    
+
     @Override
     public String writeToString(Object object) {
         try {
             checkObjectExportation(object);
-            colors = new HashSet<>();
+            colors = new ArrayList<>();
             return writer.serializeObject(object);
         } catch (Exception e) {
             throw new ExportMapperException(e.getMessage());

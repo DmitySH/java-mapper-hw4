@@ -257,6 +257,12 @@ class SerializerTest {
         primitiveCycle.setCycle(primitiveCycle);
 
         assertThrows(ExportMapperException.class, () -> serializer.writeToString(primitiveCycle));
+
+        CycleCollection cCol = new CycleCollection();
+
+        cCol.setOne(new ArrayList<>());
+        cCol.getOne().add(cCol.getOne());
+        assertThrows(ExportMapperException.class, () -> serializer.writeToString(cCol));
     }
 
     @Test
@@ -429,24 +435,14 @@ class CycleCollection {
     public CycleCollection() {
     }
 
-    private List<List<Integer>> one;
-    private List<List<Integer>> two;
+    private List<Object> one;
 
-
-    public List<List<Integer>> getOne() {
+    public List<Object> getOne() {
         return one;
     }
 
-    public void setOne(List<List<Integer>> one) {
+    public void setOne(List<Object> one) {
         this.one = one;
-    }
-
-    public List<List<Integer>> getTwo() {
-        return two;
-    }
-
-    public void setTwo(List<List<Integer>> two) {
-        this.two = two;
     }
 }
 
