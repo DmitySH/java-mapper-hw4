@@ -304,9 +304,7 @@ class SerializerTest {
 
         String str = serializer.writeToString(exclude);
 
-        System.out.println(str);
-
-
+        String st2 = serializer.writeToString(serializer.readFromString(ExcludeNullClass.class, str));
     }
 }
 

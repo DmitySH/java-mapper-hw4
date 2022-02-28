@@ -67,7 +67,7 @@ public class Serializer implements Mapper {
                     int keyStart = str.indexOf("\"", i) + 1;
                     int keyEnd = str.indexOf("#", keyStart);
                     String key = str.substring(keyStart, keyEnd);
-
+//                    System.out.println(key);
                     int valueEnd;
                     Field field = fields.get(key);
 
@@ -82,12 +82,14 @@ public class Serializer implements Mapper {
                             valueEnd = str.indexOf("\"", typeEnd + 3);
                             String value = str.substring(typeEnd + 3, valueEnd);
 //                            System.out.println(value);
-
-                            if (field.getType().equals(String.class)) {
-                                value = stringCleaner.recoverString(value);
+                            if (value.equals("null")) {
+                                field.set(obj, null);
+                            } else {
+                                if (field.getType().equals(String.class)) {
+                                    value = stringCleaner.recoverString(value);
+                                }
+                                field.set(obj, converter.convertToPrimitiveOrWrapper(value, fieldType));
                             }
-
-                            field.set(obj, converter.convertToPrimitiveOrWrapper(value, fieldType));
                             i = valueEnd + 2;
                         } else if (converter.isDateTime(fieldType)) {
                             int typeEnd = str.indexOf("\"", keyEnd);
@@ -96,14 +98,24 @@ public class Serializer implements Mapper {
                             valueEnd = str.indexOf("\"", typeEnd + 3);
                             String value = str.substring(typeEnd + 3, valueEnd);
 
-                            Object dt;
-                            dt = parseDateTime(field, fieldType, value);
-                            field.set(obj, dt);
+                            if (!value.equals("null")) {
+                                Object dt;
+                                dt = parseDateTime(field, fieldType, value);
+                                field.set(obj, dt);
+                            } else {
+                                field.set(obj, null);
+                            }
+
                             i = valueEnd + 2;
                         } else if (converter.isListOrSet(fieldType)) {
                             int typeEnd = str.indexOf("\"", keyEnd);
                             String[] typeStr = str.substring(keyEnd + 1, typeEnd).split("#");
 
+                            if (typeStr[0].equals("null")) {
+                                field.set(obj, null);
+                                i = str.indexOf('\"', typeEnd + 3) + 1;
+                                continue;
+                            }
                             int opened = 1;
                             int pos = typeEnd + 3;
                             while (opened != 0) {
@@ -127,6 +139,11 @@ public class Serializer implements Mapper {
                             int typeEnd = str.indexOf("\"", keyEnd);
                             String typeStr = str.substring(keyEnd + 1, typeEnd);
 //                            System.out.println(typeStr);
+                            if (str.charAt(typeEnd + 2) == '\"') {
+                                field.set(obj, null);
+                                i = str.indexOf('\"', typeEnd + 3) + 1;
+                                continue;
+                            }
 
                             int opened = 1;
                             int pos = typeEnd + 3;
@@ -212,6 +229,12 @@ public class Serializer implements Mapper {
                 int innerTypeEnd = sb.indexOf("\"", innerTypeBegin);
 
                 String innerType = sb.substring(innerTypeBegin, innerTypeEnd);
+//                System.out.println(innerType);
+                if (innerType.equals("null")) {
+                    collection.add(null);
+                    i = sb.indexOf("\"", innerTypeEnd + 3) + 2;
+                    continue;
+                }
 
                 Class<?> innerClass = Class.forName(innerType);
 
@@ -370,8 +393,7 @@ public class Serializer implements Mapper {
                             if (objValue != null) {
                                 realType = objValue.getClass().getName();
                                 abstractType = field.getGenericType().getTypeName();
-                            }
-                            else {
+                            } else {
                                 realType = "null";
                                 abstractType = "null";
                             }
