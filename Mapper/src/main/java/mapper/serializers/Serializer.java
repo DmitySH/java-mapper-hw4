@@ -74,21 +74,32 @@ public class Serializer implements Mapper {
                     if (field.trySetAccessible()) {
                         Class<?> fieldType = field.getType();
 
-                        if (converter.isPrimitiveOrWrapper(fieldType)) {
+                        if (converter.isPrimitiveOrWrapper(fieldType) || fieldType.isEnum()) {
                             int typeEnd = str.indexOf("\"", keyEnd);
 //                            String typeStr = str.substring(keyEnd + 1, typeEnd);
 //                            System.out.println(typeStr);
 
                             valueEnd = str.indexOf("\"", typeEnd + 3);
                             String value = str.substring(typeEnd + 3, valueEnd);
+
+
 //                            System.out.println(value);
                             if (value.equals("null")) {
                                 field.set(obj, null);
                             } else {
-                                if (field.getType().equals(String.class)) {
-                                    value = stringCleaner.recoverString(value);
+                                if (fieldType.isEnum()) {
+                                    try {
+                                        Method valueOfMethod = fieldType.getDeclaredMethod("valueOf", String.class);
+                                        field.set(obj, valueOfMethod.invoke(null, value));
+                                    } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
+                                        throw new ExportMapperException("Can't parse enum" + fieldType);
+                                    }
+                                } else {
+                                    if (field.getType().equals(String.class)) {
+                                        value = stringCleaner.recoverString(value);
+                                    }
+                                    field.set(obj, converter.convertToPrimitiveOrWrapper(value, fieldType));
                                 }
-                                field.set(obj, converter.convertToPrimitiveOrWrapper(value, fieldType));
                             }
                             i = valueEnd + 2;
                         } else if (converter.isDateTime(fieldType)) {
@@ -239,13 +250,23 @@ public class Serializer implements Mapper {
                 Class<?> innerClass = Class.forName(innerType);
 
 
-                if (converter.isPrimitiveOrWrapper(innerClass)) {
+                if (converter.isPrimitiveOrWrapper(innerClass) || innerClass.isEnum()) {
                     int valueEnd = sb.indexOf("\"", innerTypeEnd + 3);
                     String value = sb.substring(innerTypeEnd + 3, valueEnd);
-                    if (innerClass.equals(String.class)) {
-                        value = stringCleaner.recoverString(value);
+
+                    if (innerClass.isEnum()) {
+                        try {
+                            Method valueOfMethod = innerClass.getDeclaredMethod("valueOf", String.class);
+                            collection.add(valueOfMethod.invoke(null, value));
+                        } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
+                            throw new ExportMapperException("Can't parse enum" + innerType);
+                        }
+                    } else {
+                        if (innerClass.equals(String.class)) {
+                            value = stringCleaner.recoverString(value);
+                        }
+                        collection.add(converter.convertToPrimitiveOrWrapper(value, innerClass));
                     }
-                    collection.add(converter.convertToPrimitiveOrWrapper(value, innerClass));
 
                     i = valueEnd + 2;
                 } else if (converter.isDateTime(innerClass)) {
@@ -341,7 +362,7 @@ public class Serializer implements Mapper {
             for (Field field : clazz.getDeclaredFields()) {
                 if (checkFieldIsSerializable(field, excludeNulls, obj)) {
                     try {
-                        if (converter.isPrimitiveOrWrapper(field.getType())) {
+                        if (converter.isPrimitiveOrWrapper(field.getType()) || field.getType().isEnum()) {
                             String type = field.getType().getName();
 
                             // Key + type.
@@ -476,7 +497,7 @@ public class Serializer implements Mapper {
                     throw new ExportMapperException("Type " + clazz.getSimpleName() + " is not exportable");
                 }
 
-                if (converter.isPrimitiveOrWrapper(clazz) || converter.isDateTime(clazz)) {
+                if (converter.isPrimitiveOrWrapper(clazz) || converter.isDateTime(clazz) || clazz.isEnum()) {
                     String type = clazz.getName();
 
                     // Key + type.
@@ -590,7 +611,7 @@ public class Serializer implements Mapper {
                 try {
                     return !excludeNulls || field.get(object) != null;
                 } catch (IllegalAccessException e) {
-                    throw new ExportMapperException("Can't get acess to field " +
+                    throw new ExportMapperException("Can't get access to field " +
                             field.getName() + " of " + object.getClass());
                 }
             }

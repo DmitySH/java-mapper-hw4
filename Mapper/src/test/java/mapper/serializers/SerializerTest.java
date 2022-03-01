@@ -5,6 +5,7 @@ import mapper.annotations.Exported;
 import mapper.annotations.Ignored;
 import mapper.annotations.PropertyName;
 import mapper.enums.NullHandling;
+import mapper.enums.UnknownPropertiesPolicy;
 import mapper.exceptions.ExportMapperException;
 import mapper.interfaces.Mapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -285,7 +286,7 @@ class SerializerTest {
         include.setInteger(null);
         include.setByt((byte) 12);
         include.setCls(null);
-
+        include.setNullFake("null");
         exclude.setInteger(null);
         exclude.setByt((byte) 33);
         exclude.setCls(include);
@@ -303,8 +304,21 @@ class SerializerTest {
         include.getListInt().add(null);
 
         String str = serializer.writeToString(exclude);
-
         String st2 = serializer.writeToString(serializer.readFromString(ExcludeNullClass.class, str));
+        assertEquals(str, st2);
+    }
+
+    @Test
+    void testEnums() {
+        Enums enums = new Enums();
+
+        enums.setNh(NullHandling.EXCLUDE);
+        enums.setUp(new LinkedList<>(List.of(UnknownPropertiesPolicy.IGNORE, UnknownPropertiesPolicy.FAIL)));
+
+        String str = serializer.writeToString(enums);
+
+        String str2 = serializer.writeToString(serializer.readFromString(Enums.class, str));
+        assertEquals(str, str2);
     }
 }
 
@@ -369,6 +383,31 @@ class BadStringsClass {
 
     public String getS3() {
         return s3;
+    }
+}
+
+@Exported
+class Enums {
+    public Enums() {
+    }
+
+    private NullHandling nh;
+    private List<UnknownPropertiesPolicy> up;
+
+    public NullHandling getNh() {
+        return nh;
+    }
+
+    public void setNh(NullHandling nh) {
+        this.nh = nh;
+    }
+
+    public List<UnknownPropertiesPolicy> getUp() {
+        return up;
+    }
+
+    public void setUp(List<UnknownPropertiesPolicy> up) {
+        this.up = up;
     }
 }
 
@@ -534,6 +573,11 @@ class IncludeNullClass {
     }
 
     IncludeNullClass cls;
+    String nullFake;
+
+    public void setNullFake(String nullFake) {
+        this.nullFake = nullFake;
+    }
 
     private byte byt;
     private Integer integer;
