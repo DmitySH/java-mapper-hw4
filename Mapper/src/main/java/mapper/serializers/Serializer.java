@@ -36,8 +36,63 @@ public class Serializer implements Mapper {
         stringCleaner = new StringCleaner();
     }
 
+    @Override
+    public <T> T readFromString(Class<T> clazz, String input) {
+        try {
+            return clazz.cast(reader.parseObject(clazz, input));
+        } catch (Exception e) {
+            throw new ExportMapperException(e.getMessage());
+        }
+    }
+
+    @Override
+    public <T> T read(Class<T> clazz, InputStream inputStream) throws IOException {
+        BufferedInputStream bis = new BufferedInputStream(inputStream);
+        ByteArrayOutputStream buf = new ByteArrayOutputStream();
+        for (int result = bis.read(); result != -1; result = bis.read()) {
+            buf.write((byte) result);
+        }
+
+        return clazz.cast(reader.parseObject(clazz, buf.toString(StandardCharsets.UTF_8)));
+    }
+
+    @Override
+    public <T> T read(Class<T> clazz, File file) throws IOException {
+        String strObject;
+        try (BufferedReader reader = new BufferedReader(new FileReader(file, StandardCharsets.UTF_8))) {
+            strObject = reader.readLine();
+        }
+
+        return clazz.cast(reader.parseObject(clazz, strObject));
+    }
+
+    @Override
+    public String writeToString(Object object) {
+        try {
+            colors = new ArrayList<>();
+            return writer.serializeObject(object);
+        } catch (Exception e) {
+            throw new ExportMapperException(e.getMessage());
+        }
+    }
+
+    @Override
+    public void write(Object object, OutputStream outputStream) throws IOException {
+        try (Writer writer = new OutputStreamWriter(outputStream, StandardCharsets.UTF_8)) {
+            writer.write(writeToString(object));
+        }
+    }
+
+    @Override
+    public void write(Object object, File file) throws IOException {
+        try (FileWriter writer = new FileWriter(file, StandardCharsets.UTF_8)) {
+            writer.write(writeToString(object));
+        }
+    }
+
     class JsonReader {
         private Object parseObject(Class<?> clazz, String str) {
+            checkClassExportation(clazz);
             StringBuilder sb = new StringBuilder(str);
             if (isNotSerializableType(clazz)) {
                 throw new ExportMapperException("Type " + clazz.getSimpleName() + " is not exportable");
@@ -45,6 +100,142 @@ public class Serializer implements Mapper {
 
             Object obj = createObject(clazz);
 
+            Map<String, Field> fields = getFieldMap(clazz);
+
+            try {
+                int i = 1;
+                int prev;
+                if (sb.length() == 2) {
+                    return obj;
+                }
+
+                while (i < sb.length()) {
+                    prev = i;
+                    int keyStart = str.indexOf("\"", i) + 1;
+                    int keyEnd = str.indexOf("#", keyStart);
+                    String key = str.substring(keyStart, keyEnd);
+
+                    Field field = fields.get(key);
+
+                    if (field.trySetAccessible()) {
+                        Class<?> fieldType = field.getType();
+
+                        if (converter.isPrimitiveOrWrapper(fieldType) || fieldType.isEnum()) {
+                            int typeEnd = str.indexOf("\"", keyEnd);
+
+                            i = parsePrimitiveField(str, obj, field, fieldType, typeEnd);
+                        } else if (converter.isDateTime(fieldType)) {
+                            i = parseDateTimeField(str, obj, keyEnd, field, fieldType);
+                        } else if (converter.isListOrSet(fieldType)) {
+                            int typeEnd = str.indexOf("\"", keyEnd);
+                            String[] typeStr = str.substring(keyEnd + 1, typeEnd).split("#");
+
+                            if (typeStr[0].equals("null")) {
+                                field.set(obj, null);
+                                i = str.indexOf('\"', typeEnd + 3) + 1;
+                                continue;
+                            }
+
+                            int opened = 1;
+                            int pos = typeEnd + 3;
+                            pos = getPos(sb, opened, pos, '[', ']');
+                            String value = str.substring(typeEnd + 2, pos);
+                            Class<?> type = Class.forName(typeStr[0]);
+                            field.set(obj, parseCollection(type,
+                                    value));
+                            i = pos + 1;
+                        } else {
+                            int typeEnd = str.indexOf("\"", keyEnd);
+                            String typeStr = str.substring(keyEnd + 1, typeEnd);
+
+                            if (str.charAt(typeEnd + 2) == '\"') {
+                                field.set(obj, null);
+                                i = str.indexOf('\"', typeEnd + 3) + 1;
+                                continue;
+                            }
+
+                            int opened = 1;
+                            int pos = typeEnd + 3;
+                            pos = getPos(sb, opened, pos, '{', '}');
+                            String value = str.substring(typeEnd + 2, pos);
+
+                            Class<?> type = Class.forName(typeStr);
+
+                            field.set(obj, parseObject(type,
+                                    value));
+                            i = pos + 1;
+                        }
+                    }
+                    if (prev >= i) {
+                        throw new ExportMapperException("Incorrect string format");
+                    }
+                }
+            } catch (ClassNotFoundException | IllegalAccessException e) {
+                throw new ExportMapperException(e.getMessage());
+            }
+
+            return obj;
+        }
+
+        private int getPos(StringBuilder sb, int opened, int pos, char c, char c2) {
+            while (opened != 0) {
+                if (sb.charAt(pos) == c) {
+                    ++opened;
+                } else if (sb.charAt(pos) == c2) {
+                    --opened;
+                }
+                ++pos;
+            }
+            return pos;
+        }
+
+        private int parseDateTimeField(String str, Object obj, int keyEnd, Field field, Class<?> fieldType) throws IllegalAccessException {
+            int i;
+            int valueEnd;
+            int typeEnd = str.indexOf("\"", keyEnd);
+
+            valueEnd = str.indexOf("\"", typeEnd + 3);
+            String value = str.substring(typeEnd + 3, valueEnd);
+
+            if (!value.equals("null")) {
+                Object dt;
+                dt = parseDateTime(field, fieldType, value);
+                field.set(obj, dt);
+            } else {
+                field.set(obj, null);
+            }
+
+            i = valueEnd + 2;
+            return i;
+        }
+
+        private int parsePrimitiveField(String str, Object obj, Field field, Class<?> fieldType, int typeEnd) throws IllegalAccessException {
+            int i;
+            int valueEnd;
+            valueEnd = str.indexOf("\"", typeEnd + 3);
+            String value = str.substring(typeEnd + 3, valueEnd);
+            if (value.equals("null")) {
+                field.set(obj, null);
+            } else {
+                if (fieldType.isEnum()) {
+                    try {
+                        Method valueOfMethod = fieldType.getDeclaredMethod("valueOf", String.class);
+                        field.set(obj, valueOfMethod.invoke(null, value));
+                    } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
+                        throw new ExportMapperException("Can't parse enum" + fieldType);
+                    }
+                } else {
+                    if (field.getType().equals(String.class)) {
+                        value = stringCleaner.recoverString(value);
+                    }
+                    field.set(obj, converter.convertToPrimitiveOrWrapper(value, fieldType));
+                }
+            }
+            i = valueEnd + 2;
+            return i;
+        }
+
+        private Map<String, Field> getFieldMap(Class<?> clazz) {
             Map<String, Field> fields = new HashMap<>();
             for (Field field : clazz.getDeclaredFields()) {
                 if (!field.isSynthetic() && !Modifier.isStatic(field.getModifiers())
@@ -56,133 +247,7 @@ public class Serializer implements Mapper {
                     }
                 }
             }
-
-            try {
-                int i = 1;
-                if (sb.length() == 2) {
-                    return obj;
-                }
-
-                while (i < sb.length()) {
-                    int keyStart = str.indexOf("\"", i) + 1;
-                    int keyEnd = str.indexOf("#", keyStart);
-                    String key = str.substring(keyStart, keyEnd);
-//                    System.out.println(key);
-                    int valueEnd;
-                    Field field = fields.get(key);
-
-                    if (field.trySetAccessible()) {
-                        Class<?> fieldType = field.getType();
-
-                        if (converter.isPrimitiveOrWrapper(fieldType) || fieldType.isEnum()) {
-                            int typeEnd = str.indexOf("\"", keyEnd);
-//                            String typeStr = str.substring(keyEnd + 1, typeEnd);
-//                            System.out.println(typeStr);
-
-                            valueEnd = str.indexOf("\"", typeEnd + 3);
-                            String value = str.substring(typeEnd + 3, valueEnd);
-
-
-//                            System.out.println(value);
-                            if (value.equals("null")) {
-                                field.set(obj, null);
-                            } else {
-                                if (fieldType.isEnum()) {
-                                    try {
-                                        Method valueOfMethod = fieldType.getDeclaredMethod("valueOf", String.class);
-                                        field.set(obj, valueOfMethod.invoke(null, value));
-                                    } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
-                                        throw new ExportMapperException("Can't parse enum" + fieldType);
-                                    }
-                                } else {
-                                    if (field.getType().equals(String.class)) {
-                                        value = stringCleaner.recoverString(value);
-                                    }
-                                    field.set(obj, converter.convertToPrimitiveOrWrapper(value, fieldType));
-                                }
-                            }
-                            i = valueEnd + 2;
-                        } else if (converter.isDateTime(fieldType)) {
-                            int typeEnd = str.indexOf("\"", keyEnd);
-//                            String typeStr = str.substring(keyEnd + 1, typeEnd);
-
-                            valueEnd = str.indexOf("\"", typeEnd + 3);
-                            String value = str.substring(typeEnd + 3, valueEnd);
-
-                            if (!value.equals("null")) {
-                                Object dt;
-                                dt = parseDateTime(field, fieldType, value);
-                                field.set(obj, dt);
-                            } else {
-                                field.set(obj, null);
-                            }
-
-                            i = valueEnd + 2;
-                        } else if (converter.isListOrSet(fieldType)) {
-                            int typeEnd = str.indexOf("\"", keyEnd);
-                            String[] typeStr = str.substring(keyEnd + 1, typeEnd).split("#");
-
-                            if (typeStr[0].equals("null")) {
-                                field.set(obj, null);
-                                i = str.indexOf('\"', typeEnd + 3) + 1;
-                                continue;
-                            }
-                            int opened = 1;
-                            int pos = typeEnd + 3;
-                            while (opened != 0) {
-                                if (sb.charAt(pos) == '[') {
-                                    ++opened;
-                                } else if (sb.charAt(pos) == ']') {
-                                    --opened;
-                                }
-                                ++pos;
-                            }
-
-                            String value = str.substring(typeEnd + 2, pos);
-//                            System.out.println(value);
-
-                            Class<?> type = Class.forName(typeStr[0]);
-
-                            field.set(obj, parseCollection(type,
-                                    value));
-                            i = pos + 1;
-                        } else {
-                            int typeEnd = str.indexOf("\"", keyEnd);
-                            String typeStr = str.substring(keyEnd + 1, typeEnd);
-//                            System.out.println(typeStr);
-                            if (str.charAt(typeEnd + 2) == '\"') {
-                                field.set(obj, null);
-                                i = str.indexOf('\"', typeEnd + 3) + 1;
-                                continue;
-                            }
-
-                            int opened = 1;
-                            int pos = typeEnd + 3;
-                            while (opened != 0) {
-                                if (sb.charAt(pos) == '{') {
-                                    ++opened;
-                                } else if (sb.charAt(pos) == '}') {
-                                    --opened;
-                                }
-                                ++pos;
-                            }
-                            String value = str.substring(typeEnd + 2, pos);
-
-//                            System.out.println(value);
-
-                            Class<?> type = Class.forName(typeStr);
-
-                            field.set(obj, parseObject(type,
-                                    value));
-                            i = pos + 1;
-                        }
-                    }
-                }
-            } catch (ClassNotFoundException | IllegalAccessException e) {
-                throw new ExportMapperException(e.getMessage());
-            }
-
-            return obj;
+            return fields;
         }
 
         private Object parseDateTime(Field field, Class<?> fieldType, String value) {
@@ -231,11 +296,13 @@ public class Serializer implements Mapper {
             StringBuilder sb = new StringBuilder(str);
 
             int i = 1;
+            int prev;
+
             if (sb.length() == 2) {
                 return collection;
             }
-
             while (i < sb.length()) {
+                prev = i;
                 int innerTypeBegin = sb.indexOf("\"", i) + 1;
                 int innerTypeEnd = sb.indexOf("\"", innerTypeBegin);
 
@@ -251,24 +318,7 @@ public class Serializer implements Mapper {
 
 
                 if (converter.isPrimitiveOrWrapper(innerClass) || innerClass.isEnum()) {
-                    int valueEnd = sb.indexOf("\"", innerTypeEnd + 3);
-                    String value = sb.substring(innerTypeEnd + 3, valueEnd);
-
-                    if (innerClass.isEnum()) {
-                        try {
-                            Method valueOfMethod = innerClass.getDeclaredMethod("valueOf", String.class);
-                            collection.add(valueOfMethod.invoke(null, value));
-                        } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
-                            throw new ExportMapperException("Can't parse enum" + innerType);
-                        }
-                    } else {
-                        if (innerClass.equals(String.class)) {
-                            value = stringCleaner.recoverString(value);
-                        }
-                        collection.add(converter.convertToPrimitiveOrWrapper(value, innerClass));
-                    }
-
-                    i = valueEnd + 2;
+                    i = parsePrimitiveElement(collection, sb, innerTypeEnd, innerType, innerClass);
                 } else if (converter.isDateTime(innerClass)) {
                     int valueEnd = sb.indexOf("\"", innerTypeEnd + 3);
                     String value = sb.substring(innerTypeEnd + 3, valueEnd);
@@ -278,77 +328,72 @@ public class Serializer implements Mapper {
 
                     i = valueEnd + 2;
                 } else if (converter.isListOrSet(innerClass)) {
-                    int opened = 1;
-                    int pos = innerTypeEnd + 3;
-                    while (opened != 0) {
-                        if (sb.charAt(pos) == '[') {
-                            ++opened;
-                        } else if (sb.charAt(pos) == ']') {
-                            --opened;
-                        }
-                        ++pos;
-                    }
-
-                    String col = sb.substring(innerTypeEnd + 2, pos);
-                    Object value = parseCollection(innerClass, col);
-//                    System.out.println(value);
-                    collection.add(value);
-                    i = pos + 1;
+                    i = parseCollectionAsElement(collection, sb, innerTypeEnd, innerClass);
                 } else {
-                    int opened = 1;
-                    int pos = innerTypeEnd + 3;
-
-                    while (opened != 0) {
-                        if (sb.charAt(pos) == '{') {
-                            ++opened;
-                        } else if (sb.charAt(pos) == '}') {
-                            --opened;
-                        }
-                        ++pos;
-                    }
-
-                    String obj = sb.substring(innerTypeEnd + 2, pos);
-                    Object value = parseObject(innerClass, obj);
-                    collection.add(value);
-                    i = pos + 1;
+                    i = parseObjectElement(collection, sb, innerTypeEnd, innerClass);
+                }
+                if (prev >= i) {
+                    throw new ExportMapperException("Incorrect string format");
                 }
             }
 
-
             return collection;
         }
-    }
 
-    @Override
-    public <T> T readFromString(Class<T> clazz, String input) {
-        checkClassExportation(clazz);
+        private int parseObjectElement(Collection<Object> collection, StringBuilder sb, int innerTypeEnd, Class<?> innerClass) {
+            int i;
+            int opened = 1;
+            int pos = innerTypeEnd + 3;
 
-        return clazz.cast(reader.parseObject(clazz, input));
-    }
+            pos = getPos(sb, opened, pos, '{', '}');
 
-    @Override
-    public <T> T read(Class<T> clazz, InputStream inputStream) throws IOException {
-        BufferedInputStream bis = new BufferedInputStream(inputStream);
-        ByteArrayOutputStream buf = new ByteArrayOutputStream();
-        for (int result = bis.read(); result != -1; result = bis.read()) {
-            buf.write((byte) result);
+            String obj = sb.substring(innerTypeEnd + 2, pos);
+            Object value = parseObject(innerClass, obj);
+            collection.add(value);
+            i = pos + 1;
+            return i;
         }
 
-        return clazz.cast(reader.parseObject(clazz, buf.toString(StandardCharsets.UTF_8)));
-    }
+        private int parseCollectionAsElement(Collection<Object> collection, StringBuilder sb, int innerTypeEnd, Class<?> innerClass) throws ClassNotFoundException {
+            int i;
+            int opened = 1;
+            int pos = innerTypeEnd + 3;
+            pos = getPos(sb, opened, pos, '[', ']');
 
-    @Override
-    public <T> T read(Class<T> clazz, File file) throws IOException {
-        String strObject;
-        try (BufferedReader reader = new BufferedReader(new FileReader(file, StandardCharsets.UTF_8))) {
-            strObject = reader.readLine();
+            String col = sb.substring(innerTypeEnd + 2, pos);
+            Object value = parseCollection(innerClass, col);
+            collection.add(value);
+            i = pos + 1;
+            return i;
         }
 
-        return clazz.cast(reader.parseObject(clazz, strObject));
+        private int parsePrimitiveElement(Collection<Object> collection, StringBuilder sb, int innerTypeEnd, String innerType, Class<?> innerClass) {
+            int i;
+            int valueEnd = sb.indexOf("\"", innerTypeEnd + 3);
+            String value = sb.substring(innerTypeEnd + 3, valueEnd);
+
+            if (innerClass.isEnum()) {
+                try {
+                    Method valueOfMethod = innerClass.getDeclaredMethod("valueOf", String.class);
+                    collection.add(valueOfMethod.invoke(null, value));
+                } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
+                    throw new ExportMapperException("Can't parse enum" + innerType);
+                }
+            } else {
+                if (innerClass.equals(String.class)) {
+                    value = stringCleaner.recoverString(value);
+                }
+                collection.add(converter.convertToPrimitiveOrWrapper(value, innerClass));
+            }
+
+            i = valueEnd + 2;
+            return i;
+        }
     }
 
     class JsonWriter {
         private String serializeObject(Object obj) {
+            checkObjectExportation(obj);
             checkForCycles(obj);
             Class<?> clazz = obj.getClass();
             StringBuilder sb = new StringBuilder();
@@ -363,92 +408,13 @@ public class Serializer implements Mapper {
                 if (checkFieldIsSerializable(field, excludeNulls, obj)) {
                     try {
                         if (converter.isPrimitiveOrWrapper(field.getType()) || field.getType().isEnum()) {
-                            String type = field.getType().getName();
-
-                            // Key + type.
-                            sb.append('\"');
-                            sb.append(getPropertyName(field, fieldNames))
-                                    .append('#').append(type);
-                            sb.append('\"');
-
-                            // Value.
-                            sb.append(":\"");
-                            String value = String.valueOf(field.get(obj));
-                            if (field.getType().equals(String.class)) {
-                                value = stringCleaner.cleanString(value);
-                            }
-                            sb.append(value);
-                            sb.append("\"");
+                            serializePrimitiveField(obj, sb, fieldNames, field);
                         } else if (converter.isDateTime(field.getType())) {
-                            String type = field.getType().getName();
-                            String dtFormat = field.isAnnotationPresent(DateFormat.class) ?
-                                    field.getAnnotation(DateFormat.class).value() : null;
-
-                            String res;
-                            Object objValue = field.get(obj);
-                            if (objValue == null) {
-                                res = "null";
-                            } else {
-                                if (dtFormat != null) {
-                                    DateTimeFormatter timeColonFormatter = DateTimeFormatter.ofPattern(dtFormat);
-                                    res = timeColonFormatter.format((TemporalAccessor) objValue);
-                                } else {
-                                    res = objValue.toString();
-                                }
-                            }
-
-                            // Key + type.
-                            sb.append('\"');
-                            sb.append(getPropertyName(field, fieldNames))
-                                    .append('#').append(type);
-                            sb.append('\"');
-
-                            // Value.
-                            sb.append(":\"");
-                            sb.append(res);
-                            sb.append("\"");
+                            serializeDateTimeField(obj, sb, fieldNames, field);
                         } else if (converter.isListOrSet(field.getType())) {
-                            Object objValue = field.get(obj);
-                            String realType;
-                            String abstractType;
-                            if (objValue != null) {
-                                realType = objValue.getClass().getName();
-                                abstractType = field.getGenericType().getTypeName();
-                            } else {
-                                realType = "null";
-                                abstractType = "null";
-                            }
-
-
-                            // Key + type.
-                            sb.append('\"');
-                            sb.append(getPropertyName(field, fieldNames))
-                                    .append('#').append(realType)
-                                    .append('#').append(abstractType);
-                            sb.append("\":");
-
-                            // Value.
-                            if (objValue == null) {
-                                sb.append("\"null\"");
-                            } else {
-                                sb.append(serializeArray((Collection<?>) objValue));
-                            }
+                            serializeCollectionField(obj, sb, fieldNames, field);
                         } else {
-                            String type = field.getType().getName();
-
-                            // Key + type.
-                            sb.append('\"');
-                            sb.append(getPropertyName(field, fieldNames))
-                                    .append('#').append(type);
-                            sb.append("\":");
-
-                            // Value.
-                            Object objValue = field.get(obj);
-                            if (objValue == null) {
-                                sb.append("\"null\"");
-                            } else {
-                                sb.append(serializeObject(objValue));
-                            }
+                            serializeObjectField(obj, sb, fieldNames, field);
                         }
                         sb.append(',');
                     } catch (IllegalAccessException e) {
@@ -468,12 +434,105 @@ public class Serializer implements Mapper {
             return sb.toString();
         }
 
+        private void serializeObjectField(Object obj, StringBuilder sb, Set<String> fieldNames, Field field) throws IllegalAccessException {
+            String type = field.getType().getName();
+
+            // Key + type.
+            sb.append('\"');
+            sb.append(getPropertyName(field, fieldNames))
+                    .append('#').append(type);
+            sb.append("\":");
+
+            // Value.
+            Object objValue = field.get(obj);
+            if (objValue == null) {
+                sb.append("\"null\"");
+            } else {
+                sb.append(serializeObject(objValue));
+            }
+        }
+
+        private void serializeCollectionField(Object obj, StringBuilder sb, Set<String> fieldNames, Field field) throws IllegalAccessException {
+            Object objValue = field.get(obj);
+            String realType;
+            String abstractType;
+            if (objValue != null) {
+                realType = objValue.getClass().getName();
+                abstractType = field.getGenericType().getTypeName();
+            } else {
+                realType = "null";
+                abstractType = "null";
+            }
+
+
+            // Key + type.
+            sb.append('\"');
+            sb.append(getPropertyName(field, fieldNames))
+                    .append('#').append(realType)
+                    .append('#').append(abstractType);
+            sb.append("\":");
+
+            // Value.
+            if (objValue == null) {
+                sb.append("\"null\"");
+            } else {
+                sb.append(serializeArray((Collection<?>) objValue));
+            }
+        }
+
+        private void serializeDateTimeField(Object obj, StringBuilder sb, Set<String> fieldNames, Field field) throws IllegalAccessException {
+            String type = field.getType().getName();
+            String dtFormat = field.isAnnotationPresent(DateFormat.class) ?
+                    field.getAnnotation(DateFormat.class).value() : null;
+
+            String res;
+            Object objValue = field.get(obj);
+            if (objValue == null) {
+                res = "null";
+            } else {
+                if (dtFormat != null) {
+                    DateTimeFormatter timeColonFormatter = DateTimeFormatter.ofPattern(dtFormat);
+                    res = timeColonFormatter.format((TemporalAccessor) objValue);
+                } else {
+                    res = objValue.toString();
+                }
+            }
+
+            // Key + type.
+            sb.append('\"');
+            sb.append(getPropertyName(field, fieldNames))
+                    .append('#').append(type);
+            sb.append('\"');
+
+            // Value.
+            sb.append(":\"");
+            sb.append(res);
+            sb.append("\"");
+        }
+
+        private void serializePrimitiveField(Object obj, StringBuilder sb, Set<String> fieldNames, Field field) throws IllegalAccessException {
+            String type = field.getType().getName();
+
+            // Key + type.
+            sb.append('\"');
+            sb.append(getPropertyName(field, fieldNames))
+                    .append('#').append(type);
+            sb.append('\"');
+
+            // Value.
+            sb.append(":\"");
+            String value = String.valueOf(field.get(obj));
+            if (field.getType().equals(String.class)) {
+                value = stringCleaner.cleanString(value);
+            }
+            sb.append(value);
+            sb.append("\"");
+        }
+
 
         private String serializeArray(Collection<?> array) {
             checkForCycles(array);
-
             StringBuilder sb = new StringBuilder();
-
             sb.append('[');
 
             if (array.isEmpty()) {
@@ -492,28 +551,14 @@ public class Serializer implements Mapper {
                     sb.append(',');
                     continue;
                 }
+
                 Class<?> clazz = obj.getClass();
                 if (isNotSerializableType(clazz)) {
                     throw new ExportMapperException("Type " + clazz.getSimpleName() + " is not exportable");
                 }
 
                 if (converter.isPrimitiveOrWrapper(clazz) || converter.isDateTime(clazz) || clazz.isEnum()) {
-                    String type = clazz.getName();
-
-                    // Key + type.
-                    sb.append('\"');
-                    sb.append(type);
-                    sb.append('\"');
-
-                    // Value.
-                    sb.append(":\"");
-
-                    String value = String.valueOf(obj);
-                    if (clazz.equals(String.class)) {
-                        value = stringCleaner.cleanString(value);
-                    }
-                    sb.append(value);
-                    sb.append("\"");
+                    serializePrimitiveElement(sb, obj, clazz);
                 } else if (converter.isListOrSet(clazz)) {
                     String type = clazz.getName();
 
@@ -525,15 +570,7 @@ public class Serializer implements Mapper {
                     // Value.
                     sb.append(serializeArray((Collection<?>) obj));
                 } else {
-                    String type = clazz.getName();
-
-                    // Key + type.
-                    sb.append('\"');
-                    sb.append(type);
-                    sb.append("\":");
-
-                    // Value.
-                    sb.append(serializeObject(obj));
+                    serializeObjectElement(sb, obj, clazz);
                 }
                 sb.append(',');
             }
@@ -547,31 +584,36 @@ public class Serializer implements Mapper {
 
             return sb.toString();
         }
-    }
 
+        private void serializeObjectElement(StringBuilder sb, Object obj, Class<?> clazz) {
+            String type = clazz.getName();
 
-    @Override
-    public String writeToString(Object object) {
-        try {
-            checkObjectExportation(object);
-            colors = new ArrayList<>();
-            return writer.serializeObject(object);
-        } catch (Exception e) {
-            throw new ExportMapperException(e.getMessage());
+            // Key + type.
+            sb.append('\"');
+            sb.append(type);
+            sb.append("\":");
+
+            // Value.
+            sb.append(serializeObject(obj));
         }
-    }
 
-    @Override
-    public void write(Object object, OutputStream outputStream) throws IOException {
-        try (Writer writer = new OutputStreamWriter(outputStream, StandardCharsets.UTF_8)) {
-            writer.write(writeToString(object));
-        }
-    }
+        private void serializePrimitiveElement(StringBuilder sb, Object obj, Class<?> clazz) {
+            String type = clazz.getName();
 
-    @Override
-    public void write(Object object, File file) throws IOException {
-        try (FileWriter writer = new FileWriter(file, StandardCharsets.UTF_8)) {
-            writer.write(writeToString(object));
+            // Key + type.
+            sb.append('\"');
+            sb.append(type);
+            sb.append('\"');
+
+            // Value.
+            sb.append(":\"");
+
+            String value = String.valueOf(obj);
+            if (clazz.equals(String.class)) {
+                value = stringCleaner.cleanString(value);
+            }
+            sb.append(value);
+            sb.append("\"");
         }
     }
 
@@ -605,7 +647,6 @@ public class Serializer implements Mapper {
 
     private boolean checkFieldIsSerializable(Field field, boolean excludeNulls,
                                              Object object) {
-
         if (!field.isSynthetic() && !Modifier.isStatic(field.getModifiers())) {
             if (field.trySetAccessible() && !field.isAnnotationPresent(Ignored.class)) {
                 try {
